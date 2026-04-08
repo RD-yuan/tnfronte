@@ -119,3 +119,29 @@ export interface StyleSource {
   source: string;
   specificity: number;
 }
+
+// ─── WebSocket Protocol ────────────────────────────────────────────────
+
+/** Layer info sent to the editor UI */
+export interface LayerInfo {
+  oid: string;
+  tagName: string;
+  component: string;
+  filePath: string;
+  line: number;
+}
+
+/** Client → Server WebSocket message */
+export interface ClientMessage {
+  kind: 'action';
+  oidId: string;
+  action: CodeAction;
+}
+
+/** Server → Client WebSocket message */
+export type ServerMessage =
+  | { kind: 'action-result'; success: boolean; filePath: string; code?: string }
+  | { kind: 'layers'; layers: LayerInfo[] }
+  | { kind: 'file-changed'; filePath: string }
+  | { kind: 'error'; message: string }
+  | { kind: 'connected'; message: string };

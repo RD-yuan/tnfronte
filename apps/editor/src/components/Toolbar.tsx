@@ -1,21 +1,42 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useEditorStore } from '../store/editor-store';
+import { useWebSocket } from '../hooks/use-websocket';
 
 export function Toolbar() {
-  const { zoom, setZoom } = useEditorStore();
+  const { zoom, setZoom, backendConnected } = useEditorStore();
+  const { undo, redo, connected } = useWebSocket();
 
   return (
     <div className="h-12 bg-panel border-b border-gray-700 flex items-center px-4 gap-4">
       {/* Logo */}
-      <div className="text-white font-bold text-lg tracking-tight">
+      <div className="text-white font-bold text-lg tracking-tight flex items-center gap-2">
         TNFronte
+        {/* Connection indicator */}
+        <span
+          className={`w-2 h-2 rounded-full ${
+            backendConnected || connected ? 'bg-green-500' : 'bg-red-500'
+          }`}
+          title={backendConnected || connected ? 'Connected to backend' : 'Disconnected'}
+        />
       </div>
 
       <div className="w-px h-6 bg-gray-700" />
 
       {/* Undo / Redo */}
-      <button className="text-gray-400 hover:text-white text-sm">↶ Undo</button>
-      <button className="text-gray-400 hover:text-white text-sm">↷ Redo</button>
+      <button
+        className="text-gray-400 hover:text-white text-sm disabled:opacity-30"
+        onClick={undo}
+        title="Undo (Ctrl+Z)"
+      >
+        ↶ Undo
+      </button>
+      <button
+        className="text-gray-400 hover:text-white text-sm disabled:opacity-30"
+        onClick={redo}
+        title="Redo (Ctrl+Y)"
+      >
+        ↷ Redo
+      </button>
 
       <div className="w-px h-6 bg-gray-700" />
 

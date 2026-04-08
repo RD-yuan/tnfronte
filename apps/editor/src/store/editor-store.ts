@@ -34,6 +34,9 @@ export interface EditorState {
   // Right panel
   activeTab: 'style' | 'props' | 'events';
 
+  // Connection
+  backendConnected: boolean;
+
   // Actions
   setZoom: (z: number) => void;
   setPan: (x: number, y: number) => void;
@@ -42,6 +45,7 @@ export interface EditorState {
   setHoveredOID: (oid: string | null) => void;
   setLayers: (layers: LayerItem[]) => void;
   setActiveTab: (tab: 'style' | 'props' | 'events') => void;
+  setBackendConnected: (v: boolean) => void;
 }
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -53,6 +57,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   hoveredOID: null,
   layers: [],
   activeTab: 'style',
+  backendConnected: false,
 
   setZoom: (z) => set({ zoom: Math.max(0.25, Math.min(3, z)) }),
   setPan: (x, y) => set({ panX: x, panY: y }),
@@ -61,4 +66,5 @@ export const useEditorStore = create<EditorState>((set) => ({
   setHoveredOID: (oid) => set({ hoveredOID: oid }),
   setLayers: (layers) => set({ layers }),
   setActiveTab: (tab) => set({ activeTab: tab }),
+  setBackendConnected: (v) => set({ backendConnected: v }),
 }));

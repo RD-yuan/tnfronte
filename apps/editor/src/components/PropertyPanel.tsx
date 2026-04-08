@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { useEditorStore } from '../store/editor-store';
+import { useWebSocket } from '../hooks/use-websocket';
 
 export function PropertyPanel() {
   const { selectedElement, activeTab, setActiveTab } = useEditorStore();
+  const { sendAction } = useWebSocket();
 
   if (!selectedElement) {
     return (
@@ -43,7 +45,7 @@ export function PropertyPanel() {
 
       {/* Tab content */}
       <div className="flex-1 overflow-auto p-3 space-y-3">
-        {activeTab === 'style' && <StyleEditor />}
+        {activeTab === 'style' && <StyleEditor oid={selectedElement.oid} sendAction={sendAction} />}
         {activeTab === 'props' && <PropsEditor />}
         {activeTab === 'events' && <EventsEditor />}
       </div>
@@ -51,43 +53,57 @@ export function PropertyPanel() {
   );
 }
 
-function StyleEditor() {
-  // TODO: fetch actual styles from backend via OID
-  const styleProps = [
-    { name: 'color', value: '#ffffff', type: 'color' },
-    { name: 'background-color', value: '#3b82f6', type: 'color' },
-    { name: 'font-size', value: '16px', type: 'string' },
-    { name: 'width', value: 'auto', type: 'string' },
-    { name: 'height', value: 'auto', type: 'string' },
-    { name: 'margin', value: '0', type: 'string' },
-    { name: 'padding', value: '8px', type: 'string' },
-    { name: 'border-radius', value: '0', type: 'string' },
-  ];
+// ─── Style Editor ──────────────────────────────────────────────────────
+
+function StyleEditor({ oid, sendAction }: { oid: string; sendAction: (id: string, action: any) => void }) {
+  const [styleProps, setStyleProps] = useState<Record<string, string>>({
+    color: '#ffffff',
+    backgroundColor: '#3b82f6',
+    fontSize: '16px',
+    width: 'auto',
+    height: 'auto',
+    margin: '0',
+    padding: '8px',
+    borderRadius: '0',
+  });
+
+  const handleChange = useCallback(
+    (cssProp: string, value: string) => {
+      setStyleProps((prev) => ({ ...prev, [cssProp]: value }));
+      sendAction(oid, {
+        type: 'MODIFY_STYLE',
+        prop: cssProp,
+        value,
+      });
+    },
+    [oid, sendAction],
+  );
 
   return (
     <div className="space-y-2">
-      {styleProps.map((prop) => (
-        <div key={prop.name} className="flex items-center gap-2">
-          <label className="text-gray-400 text-xs w-28 shrink-0">
-            {prop.name}
-          </label>
-          {prop.type === 'color' ? (
+      {Object.entries(styleProps).map(([prop, value]) => (
+        <div key={prop} className="flex items-center gap-2">
+          <label className="text-gray-400 text-xs w-28 shrink-0">{prop}</label>
+          {prop.match(/color|Color/) ? (
             <div className="flex items-center gap-1 flex-1">
               <input
                 type="color"
-                defaultValue={prop.value}
+                value={value}
+                onChange={(e) => handleChange(prop, e.target.value)}
                 className="w-6 h-6 rounded cursor-pointer"
               />
               <input
                 type="text"
-                defaultValue={prop.value}
+                value={value}
+                onChange={(e) => handleChange(prop, e.target.value)}
                 className="bg-surface text-white text-xs px-2 py-1 rounded flex-1 border border-gray-600"
               />
             </div>
           ) : (
             <input
               type="text"
-              defaultValue={prop.value}
+              value={value}
+              onChange={(e) => handleChange(prop, e.target.value)}
               className="bg-surface text-white text-xs px-2 py-1 rounded flex-1 border border-gray-600"
             />
           )}
@@ -97,6 +113,8 @@ function StyleEditor() {
   );
 }
 
+// ─── Props Editor ──────────────────────────────────────────────────────
+
 function PropsEditor() {
   return (
     <div className="text-gray-500 text-sm">
@@ -104,6 +122,8 @@ function PropsEditor() {
     </div>
   );
 }
+
+// ─── Events Editor ─────────────────────────────────────────────────────
 
 function EventsEditor() {
   return (
