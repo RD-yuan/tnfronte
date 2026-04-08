@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@tnfronte/shared": ["./packages/shared/src"],
+      "@tnfronte/bridge": ["./packages/bridge/src"],
+      "@tnfronte/code-mod": ["./packages/code-mod/src"],
+      "@tnfronte/oid-index": ["./packages/oid-index/src"],
+      "@tnfronte/react-adapter": ["./packages/adapters/react-adapter/src"],
+      "@tnfronte/vue-adapter": ["./packages/adapters/vue-adapter/src"],
+      "@tnfronte/svelte-adapter": ["./packages/adapters/svelte-adapter/src"],
+      "@tnfronte/html-adapter": ["./packages/adapters/html-adapter/src"],
+      "@tnfronte/dev-server": ["./packages/dev-server/src"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "**/node_modules", "**/dist"]
+}

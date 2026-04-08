@@ -1,0 +1,12 @@
+{
+  "name": "@tnfronte/bridge",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch",
+    "clean": "rimraf dist"
+  }
+}
