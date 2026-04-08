@@ -1,10 +1,12 @@
 /**
  * @tnfronte/code-mod
  *
- * Code Modification Engine — receives CodeActions from the editor UI,
- * locates the target AST node via OID mapping, transforms the AST,
- * formats the result with Prettier, and writes the file back to disk.
- *
- * Uses recast internally to preserve original formatting and minimise
- * Git diffs.
+ * Code Modification Engine — the central coordinator that:
+ *   1. Receives a CodeAction + OID
+ *   2. Looks up the OID in the index to find the file + location
+ *   3. Delegates to the correct Framework Adapter
+ *   4. Runs Prettier on the result
+ *   5. Returns the final code (caller is responsible for writing to disk)
  */
+
+export { CodeModEngine } from './engine';

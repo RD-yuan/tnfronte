@@ -7,5 +7,18 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@tnfronte/code-mod": "workspace:*",
+    "@tnfronte/oid-index": "workspace:*",
+    "@tnfronte/shared": "workspace:*",
+    "chokidar": "^4.0.0",
+    "fastify": "^5.2.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
   }
 }

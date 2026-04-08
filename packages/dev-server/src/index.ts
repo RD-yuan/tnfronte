@@ -1,11 +1,11 @@
 /**
  * @tnfronte/dev-server
  *
- * Vite plugin (and future Webpack plugin) that integrates TNFronte
- * into the user's dev-server lifecycle:
+ * Vite plugin that integrates TNFronte into any Vite-powered user project:
  *
- *  1. transform hook — injects data-oid attributes into JSX / SFC / HTML
- *  2. transformIndexHtml hook — injects the Bridge script
- *  3. configureServer hook — serves the Bridge bundle + OID index API
- *  4. HMR integration — notifies Editor Backend on file changes
+ *  1. transform hook   — injects data-oid via the React/Vue/HTML adapter
+ *  2. transformIndexHtml — injects the Bridge script + editing-mode flag
+ *  3. configureServer   — serves the Bridge bundle + OID Index API
  */
+
+export { tnfronteVitePlugin } from './vite-plugin';

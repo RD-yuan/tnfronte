@@ -1,9 +1,9 @@
 /**
  * @tnfronte/oid-index
  *
- * Manages the OID → source-location mapping table.
- *
- * When the Vite/Webpack plugin injects data-oid attributes, the
- * resulting mappings are stored here so the Code Mod Engine can
- * look up any OID and find its source file + AST location.
+ * In-memory mapping table: OID.id → OID record.
+ * Updated each time the Vite/Webpack plugin injects data-oid into a file.
+ * Queried by the Code Mod Engine to locate source positions.
  */
+
+export { OIDIndex } from './oid-index';

@@ -4,5 +4,21 @@
   "private": true,
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "scripts": { "build": "tsc --project tsconfig.json", "dev": "tsc --watch", "clean": "rimraf dist" }
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@tnfronte/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@babel/generator": "^7.26.0",
+    "@babel/parser": "^7.26.0",
+    "@babel/traverse": "^7.26.0",
+    "@babel/types": "^7.26.0",
+    "prettier": "^3.4.0",
+    "recast": "^0.23.0",
+    "typescript": "^5.6.0"
+  }
 }

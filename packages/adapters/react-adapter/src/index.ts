@@ -13,3 +13,5 @@
  *   applies the requested CodeAction (style change, prop change, etc.)
  *   Uses recast to preserve formatting.
  */
+
+export { ReactAdapter } from './react-adapter';
