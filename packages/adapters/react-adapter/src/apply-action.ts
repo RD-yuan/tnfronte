@@ -4,27 +4,23 @@
  * Locates a JSX element by its `data-oid` attribute and applies a CodeAction
  * (modify style, prop, text, move, resize, delete, insert, reorder).
  *
- * Uses recast to preserve original formatting and minimise diffs.
+ * Uses @babel/parser + @babel/traverse + @babel/generator for AST
+ * manipulation. Prettier (in code-mod engine) handles formatting.
  */
 
-import * as recast from 'recast';
 import { parse as babelParse } from '@babel/parser';
 import traverse from '@babel/traverse';
+import generate from '@babel/generator';
 import * as t from '@babel/types';
 
 import type { OID, CodeAction } from '@tnfronte/shared';
 
-const tsxParser = {
-  parse(source: string) {
-    return babelParse(source, {
-      sourceType: 'module',
-      plugins: ['jsx', 'typescript', 'decorators-legacy', 'importMeta'],
-    });
-  },
-};
-
 export function applyAction(source: string, oid: OID, action: CodeAction): string {
-  const ast = recast.parse(source, { parser: tsxParser });
+  const ast = babelParse(source, {
+    sourceType: 'module',
+    plugins: ['jsx', 'typescript', 'decorators-legacy', 'importMeta'],
+    errorRecovery: true,
+  });
 
   traverse(ast, {
     JSXOpeningElement(path) {
@@ -51,7 +47,7 @@ export function applyAction(source: string, oid: OID, action: CodeAction): strin
           deleteElement(path);
           break;
         case 'INSERT':
-          // handled at parent level — see INSERT handler below
+          // handled separately below
           break;
       }
     },
@@ -65,34 +61,32 @@ export function applyAction(source: string, oid: OID, action: CodeAction): strin
         const parentEl = path.parentPath;
         if (!parentEl?.isJSXElement()) return;
 
-        // Parse the insertion code as JSX
-        const childAst = recast.parse(`<>{${action.code}}</>`, { parser: tsxParser });
-        // Extract children from fragment
-        let inserted = false;
+        // Parse the insertion code as JSX fragment
+        const childAst = babelParse(`<__wrapper>${action.code}</__wrapper>`, {
+          sourceType: 'module',
+          plugins: ['jsx', 'typescript'],
+        });
+
         traverse(childAst, {
-          JSXFragment(fragPath) {
-            if (inserted) return;
-            const children = fragPath.node.children.filter(
-              (c) => !(t.isJSXText(c) && c.value.trim() === ''),
-            );
-            for (let i = 0; i < children.length; i++) {
-              const idx = Math.min(action.index + i, parentEl.node.children.length);
-              parentEl.node.children.splice(idx, 0, children[i]);
-            }
-            inserted = true;
-          },
           JSXElement(elPath) {
-            if (inserted) return;
-            const idx = Math.min(action.index, parentEl.node.children.length);
-            parentEl.node.children.splice(idx, 0, elPath.node as any);
-            inserted = true;
+            // Only insert direct children of the wrapper
+            const parent = elPath.parentPath;
+            if (
+              parent?.isJSXElement() &&
+              t.isJSXIdentifier(parent.node.openingElement.name) &&
+              parent.node.openingElement.name.name === '__wrapper'
+            ) {
+              const idx = Math.min(action.index, parentEl.node.children.length);
+              parentEl.node.children.splice(idx, 0, elPath.node as any);
+            }
           },
         });
       },
     });
   }
 
-  return recast.print(ast).code;
+  const output = generate(ast, { retainLines: true, compact: false });
+  return output.code;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────
@@ -157,7 +151,6 @@ function modifyProp(path: any, prop: string, value: string) {
 function modifyText(path: any, newText: string) {
   const parent = path.parent;
   if (t.isJSXElement(parent)) {
-    // Replace first text child or add one
     const textChild = parent.children?.find((c) => t.isJSXText(c));
     if (textChild) {
       (textChild as t.JSXText).value = newText;
