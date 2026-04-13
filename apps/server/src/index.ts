@@ -10,9 +10,9 @@
  *  - Push file-change notifications back to Editor UI
  */
 
-import { createServer } from './server.ts';
-export { createServer } from './server.ts';
-export { WebSocketHub } from './ws-hub.ts';
+import { createServer } from './server';
+export { createServer } from './server';
+export { WebSocketHub } from './ws-hub';
 
 // Auto-start when run directly (pnpm dev / pnpm start)
 const isDirectRun =

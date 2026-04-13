@@ -1,9 +1,11 @@
 import React, { useState, useRef, WheelEvent, MouseEvent } from 'react';
 import { useEditorStore } from '../store/editor-store';
 import { useBridge } from '../hooks/use-bridge';
+import { useWebSocket } from '../hooks/use-websocket';
 
 export function Canvas() {
-  const { iframeRef, sendToBridge } = useBridge();
+  const { sendAction } = useWebSocket();
+  const { iframeRef, sendToBridge } = useBridge(sendAction);
   const { zoom, panX, panY, setZoom, setPan, iframeSrc, selectedElement } =
     useEditorStore();
 

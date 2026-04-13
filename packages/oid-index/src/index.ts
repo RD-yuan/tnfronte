@@ -6,4 +6,4 @@
  * Queried by the Code Mod Engine to locate source positions.
  */
 
-export { OIDIndex } from './oid-index.ts';
+export { OIDIndex } from './oid-index';

@@ -9,4 +9,4 @@
  *   5. Returns the final code (caller is responsible for writing to disk)
  */
 
-export { CodeModEngine } from './engine.ts';
+export { CodeModEngine } from './engine';

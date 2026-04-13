@@ -8,9 +8,9 @@ import { OIDIndex } from '@tnfronte/oid-index';
 import { CodeModEngine } from '@tnfronte/code-mod';
 import { ReactAdapter } from '@tnfronte/react-adapter';
 import type { ClientMessage, LayerInfo } from '@tnfronte/shared';
-import { WebSocketHub } from './ws-hub.ts';
-import { ProjectManager } from './project-manager.ts';
-import { UndoManager } from './undo-manager.ts';
+import { WebSocketHub } from './ws-hub';
+import { ProjectManager } from './project-manager';
+import { UndoManager } from './undo-manager';
 
 export interface ServerOptions {
   port?: number;

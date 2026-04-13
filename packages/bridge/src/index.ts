@@ -9,4 +9,4 @@
  * the Vite / Webpack plugin at dev-server time.
  */
 
-export { Bridge } from './bridge.ts';
+export { Bridge } from './bridge';

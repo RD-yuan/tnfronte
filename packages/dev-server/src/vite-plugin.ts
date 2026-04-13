@@ -1,11 +1,17 @@
 import type { Plugin, ViteDevServer } from 'vite';
 import { OIDIndex } from '@tnfronte/oid-index';
-import { injectOID as reactInjectOID } from '@tnfronte/react-adapter/dist/inject-oid';
+import { injectOID as reactInjectOID } from '@tnfronte/react-adapter';
 import type { FrameworkAdapter, InjectionResult } from '@tnfronte/shared';
 
 export interface TnfrontePluginOptions {
   /** Extra framework adapters to register. */
   adapters?: FrameworkAdapter[];
+  /**
+   * Origin of the Editor UI (e.g. 'http://localhost:5173').
+   * Used by Bridge for postMessage security validation.
+   * If not set, Bridge will accept messages from any origin.
+   */
+  editorOrigin?: string;
 }
 
 export function tnfronteVitePlugin(options: TnfrontePluginOptions = {}): Plugin {
@@ -21,9 +27,12 @@ export function tnfronteVitePlugin(options: TnfrontePluginOptions = {}): Plugin 
       try {
         const fs = await import('fs');
         const path = await import('path');
+        const { fileURLToPath } = await import('url');
+        const __filename = fileURLToPath(import.meta.url);
+        const __dirname = path.dirname(__filename);
         const bridgePath = path.resolve(
           __dirname,
-          '../../bridge/dist/bridge.js',
+          '../../../bridge/dist/bridge.js',
         );
         bridgeSource = fs.readFileSync(bridgePath, 'utf-8');
       } catch {
@@ -63,7 +72,7 @@ export function tnfronteVitePlugin(options: TnfrontePluginOptions = {}): Plugin 
     transformIndexHtml: {
       enforce: 'post',
       transform(html: string, ctx: { server?: ViteDevServer }) {
-        const editorOrigin = ctx.server?.resolvedUrls?.local[0] || '';
+        const editorOrigin = options.editorOrigin || '';
         return [
           // Editing mode flag + editor origin (for Bridge security)
           {
