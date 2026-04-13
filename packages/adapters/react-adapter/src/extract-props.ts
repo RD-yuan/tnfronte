@@ -3,7 +3,7 @@
  *
  * Given an OID, walks the AST to find the matching JSX element and
  * extracts all editable props (className, style properties, text children,
- * custom attributes).
+ * custom attributes) with accurate source locations.
  */
 
 import * as recast from 'recast';
@@ -43,6 +43,7 @@ export function extractProps(source: string, oid: OID): EditableProp[] {
         if (t.isJSXIdentifier(attr.name) && attr.name.name === 'data-oid') continue;
 
         const name = (attr.name as t.JSXIdentifier).name;
+        const loc = attr.loc;
 
         if (name === 'style' && t.isJSXExpressionContainer(attr.value)) {
           const expr = attr.value.expression;
@@ -60,8 +61,8 @@ export function extractProps(source: string, oid: OID): EditableProp[] {
                   type: inferType(prop.key.name, val),
                   value: val,
                   sourceLocation: {
-                    start: (prop.loc?.start.index ?? 0) as number,
-                    end: (prop.loc?.end.index ?? 0) as number,
+                    start: prop.loc?.start.column ?? 0,
+                    end: prop.loc?.end.column ?? 0,
                   },
                 });
               }
@@ -72,7 +73,10 @@ export function extractProps(source: string, oid: OID): EditableProp[] {
             name: 'className',
             type: 'string',
             value: t.isStringLiteral(attr.value) ? attr.value.value : '',
-            sourceLocation: { start: 0, end: 0 },
+            sourceLocation: {
+              start: loc?.start.column ?? 0,
+              end: loc?.end.column ?? 0,
+            },
           });
         } else {
           props.push({
@@ -83,7 +87,10 @@ export function extractProps(source: string, oid: OID): EditableProp[] {
               : t.isJSXExpressionContainer(attr.value)
                 ? recast.print(attr.value).code
                 : '',
-            sourceLocation: { start: 0, end: 0 },
+            sourceLocation: {
+              start: loc?.start.column ?? 0,
+              end: loc?.end.column ?? 0,
+            },
           });
         }
       }
@@ -97,7 +104,10 @@ export function extractProps(source: string, oid: OID): EditableProp[] {
               name: 'children',
               type: 'string',
               value: child.value,
-              sourceLocation: { start: 0, end: 0 },
+              sourceLocation: {
+                start: child.loc?.start.column ?? 0,
+                end: child.loc?.end.column ?? 0,
+              },
             });
           }
         }

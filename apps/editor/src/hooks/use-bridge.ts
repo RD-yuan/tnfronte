@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import type { MessageEnvelope, BridgeToEditorMessage } from '@tnfronte/shared';
 import { useEditorStore } from '../store/editor-store';
+import { API } from '../config';
 
 /**
  * Handles postMessage communication with the Bridge script running
@@ -73,7 +74,7 @@ export function useBridge() {
 
   async function fetchLayers() {
     try {
-      const res = await fetch('http://localhost:5173/__tnfronte_api/layers');
+      const res = await fetch(API.devLayers);
       const data = await res.json();
       setLayers(data);
     } catch {

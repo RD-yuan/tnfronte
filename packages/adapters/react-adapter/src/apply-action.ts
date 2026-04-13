@@ -22,8 +22,43 @@ export function applyAction(source: string, oid: OID, action: CodeAction): strin
     errorRecovery: true,
   });
 
+  if (action.type === 'REORDER') {
+    throw new Error('REORDER action is not yet implemented');
+  }
+
+  // Single pass: handle INSERT inline when we find the parent
   traverse(ast, {
     JSXOpeningElement(path) {
+      // ── INSERT: find parent by OID and insert child ───────────────
+      if (action.type === 'INSERT') {
+        if (!findMatchingOID(path, action.parentOID)) return;
+
+        const parentEl = path.parentPath;
+        if (!parentEl?.isJSXElement()) return;
+
+        // Parse the insertion code as JSX fragment
+        const childAst = babelParse(`<__wrapper>${action.code}</__wrapper>`, {
+          sourceType: 'module',
+          plugins: ['jsx', 'typescript'],
+        });
+
+        traverse(childAst, {
+          JSXElement(elPath) {
+            const parent = elPath.parentPath;
+            if (
+              parent?.isJSXElement() &&
+              t.isJSXIdentifier(parent.node.openingElement.name) &&
+              parent.node.openingElement.name.name === '__wrapper'
+            ) {
+              const idx = Math.min(action.index, parentEl.node.children.length);
+              parentEl.node.children.splice(idx, 0, elPath.node as any);
+            }
+          },
+        });
+        return; // done — don't process children of this element
+      }
+
+      // ── Other actions: find element by its own OID ────────────────
       if (!findMatchingOID(path, oid.id)) return;
 
       switch (action.type) {
@@ -46,44 +81,9 @@ export function applyAction(source: string, oid: OID, action: CodeAction): strin
         case 'DELETE':
           deleteElement(path);
           break;
-        case 'INSERT':
-          // handled separately below
-          break;
       }
     },
   });
-
-  // Handle INSERT (find parent, insert child)
-  if (action.type === 'INSERT') {
-    traverse(ast, {
-      JSXOpeningElement(path) {
-        if (!findMatchingOID(path, action.parentOID)) return;
-        const parentEl = path.parentPath;
-        if (!parentEl?.isJSXElement()) return;
-
-        // Parse the insertion code as JSX fragment
-        const childAst = babelParse(`<__wrapper>${action.code}</__wrapper>`, {
-          sourceType: 'module',
-          plugins: ['jsx', 'typescript'],
-        });
-
-        traverse(childAst, {
-          JSXElement(elPath) {
-            // Only insert direct children of the wrapper
-            const parent = elPath.parentPath;
-            if (
-              parent?.isJSXElement() &&
-              t.isJSXIdentifier(parent.node.openingElement.name) &&
-              parent.node.openingElement.name.name === '__wrapper'
-            ) {
-              const idx = Math.min(action.index, parentEl.node.children.length);
-              parentEl.node.children.splice(idx, 0, elPath.node as any);
-            }
-          },
-        });
-      },
-    });
-  }
 
   const output = generate(ast, { retainLines: true, compact: false });
   return output.code;

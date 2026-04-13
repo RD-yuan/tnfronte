@@ -62,12 +62,13 @@ export function tnfronteVitePlugin(options: TnfrontePluginOptions = {}): Plugin 
     // ─── Inject Bridge script into HTML ──────────────────────────────
     transformIndexHtml: {
       enforce: 'post',
-      transform() {
+      transform(html: string, ctx: { server?: ViteDevServer }) {
+        const editorOrigin = ctx.server?.resolvedUrls?.local[0] || '';
         return [
-          // Editing mode flag
+          // Editing mode flag + editor origin (for Bridge security)
           {
             tag: 'script',
-            children: 'window.__TNFRONTE_EDITING__ = true;',
+            children: `window.__TNFRONTE_EDITING__ = true; window.__TNFRONTE_EDITOR_ORIGIN__ = ${JSON.stringify(editorOrigin)};`,
             injectTo: 'head' as const,
           },
           // Bridge script

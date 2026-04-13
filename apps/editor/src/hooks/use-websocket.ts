@@ -1,8 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import type { CodeAction, ServerMessage, LayerInfo } from '@tnfronte/shared';
 import { useEditorStore } from '../store/editor-store';
-
-const WS_URL = 'ws://localhost:4000/ws';
+import { API, WS_URL } from '../config';
 
 /**
  * useWebSocket — manages the WebSocket connection between the Editor UI
@@ -97,21 +96,21 @@ export function useWebSocket() {
   /** Send undo request via HTTP. */
   const undo = useCallback(async () => {
     try {
-      await fetch('http://localhost:4000/api/undo', { method: 'POST' });
+      await fetch(API.undo, { method: 'POST' });
     } catch { /* ignore */ }
   }, []);
 
   /** Send redo request via HTTP. */
   const redo = useCallback(async () => {
     try {
-      await fetch('http://localhost:4000/api/redo', { method: 'POST' });
+      await fetch(API.redo, { method: 'POST' });
     } catch { /* ignore */ }
   }, []);
 
   /** Open a project directory. */
   const openProject = useCallback(async (dir: string) => {
     try {
-      const res = await fetch('http://localhost:4000/api/project/open', {
+      const res = await fetch(API.projectOpen, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dir }),
@@ -125,7 +124,7 @@ export function useWebSocket() {
   /** Fetch layers from backend. */
   const fetchLayers = useCallback(async () => {
     try {
-      const res = await fetch('http://localhost:4000/api/layers');
+      const res = await fetch(API.layers);
       const layers: LayerInfo[] = await res.json();
       setLayers(layers);
     } catch { /* ignore */ }

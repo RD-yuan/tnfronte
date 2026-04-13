@@ -6,6 +6,10 @@
  *  2. Forward actions to Editor UI via window.parent.postMessage
  *  3. Receive commands from Editor (highlight, style preview, text edit)
  *  4. Notify Editor of DOM updates after HMR
+ *
+ * Security:
+ *  - targetOrigin is read from window.__TNFRONTE_EDITOR_ORIGIN__ (set by vite-plugin)
+ *  - Incoming messages are validated against the expected editor origin
  */
 
 import type {
@@ -28,8 +32,12 @@ function toDOMRectLike(rect: DOMRect): DOMRectLike {
   };
 }
 
+/** Expected editor origin for message validation (set by vite-plugin). */
+const EDITOR_ORIGIN: string =
+  (window as any).__TNFRONTE_EDITOR_ORIGIN__ || '';
+
 export class Bridge {
-  private targetOrigin = '*';
+  private targetOrigin = EDITOR_ORIGIN || '*';
   private selectedOID: string | null = null;
   private dragState: { oid: string; startX: number; startY: number } | null = null;
 
@@ -140,9 +148,14 @@ export class Bridge {
       });
     });
 
-    document.addEventListener('mouseup', () => {
+    document.addEventListener('mouseup', (e) => {
       if (!this.dragState) return;
-      this.send({ type: 'DRAG_END', oid: this.dragState.oid, finalX: 0, finalY: 0 });
+      this.send({
+        type: 'DRAG_END',
+        oid: this.dragState.oid,
+        finalX: e.clientX - this.dragState.startX,
+        finalY: e.clientY - this.dragState.startY,
+      });
       this.dragState = null;
     });
 
@@ -152,8 +165,11 @@ export class Bridge {
       if (oid) this.send({ type: 'ELEMENT_DBLCLICK', oid });
     });
 
-    // Receive Editor commands
+    // Receive Editor commands — validate origin
     window.addEventListener('message', (e) => {
+      // Security: reject messages from unexpected origins
+      if (EDITOR_ORIGIN && e.origin !== EDITOR_ORIGIN) return;
+
       const data = e.data as MessageEnvelope;
       if (data?.channel !== 'tnfronte-bridge') return;
       if (data.direction !== 'editor→bridge') return;
@@ -183,16 +199,27 @@ export class Bridge {
   private startInlineEdit(oid: string) {
     const el = document.querySelector(`[data-oid="${oid}"]`) as HTMLElement | null;
     if (!el) return;
+
+    // Preserve original contentEditable state
+    const wasEditable = el.contentEditable;
     el.contentEditable = 'true';
     el.focus();
+
     const onDone = () => {
-      el.contentEditable = 'false';
+      el.contentEditable = wasEditable;
       this.send({ type: 'TEXT_EDIT_COMPLETE', oid, newText: el.innerText });
     };
-    el.addEventListener('blur', onDone, { once: true });
+
+    const onBlur = () => {
+      el.removeEventListener('blur', onBlur);
+      onDone();
+    };
+    el.addEventListener('blur', onBlur);
+
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
+        el.removeEventListener('blur', onBlur);
         onDone();
       }
     });

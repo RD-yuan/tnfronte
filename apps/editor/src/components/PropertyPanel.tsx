@@ -1,6 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useEditorStore } from '../store/editor-store';
 import { useWebSocket } from '../hooks/use-websocket';
+import type { EditableProp } from '@tnfronte/shared';
+import { API } from '../config';
+
+/** Debounce delay for style/prop changes (ms) */
+const DEBOUNCE_MS = 400;
 
 export function PropertyPanel() {
   const { selectedElement, activeTab, setActiveTab } = useEditorStore();
@@ -53,31 +58,102 @@ export function PropertyPanel() {
   );
 }
 
-// ─── Style Editor ──────────────────────────────────────────────────────
+// ─── Style Editor (reads actual props from backend) ────────────────────
 
 function StyleEditor({ oid, sendAction }: { oid: string; sendAction: (id: string, action: any) => void }) {
-  const [styleProps, setStyleProps] = useState<Record<string, string>>({
-    color: '#ffffff',
-    backgroundColor: '#3b82f6',
-    fontSize: '16px',
-    width: 'auto',
-    height: 'auto',
-    margin: '0',
-    padding: '8px',
-    borderRadius: '0',
-  });
+  const [styleProps, setStyleProps] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Fetch actual props when selection changes
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchProps() {
+      setLoading(true);
+      try {
+        const res = await fetch(`${API.oid(oid)}`);
+        if (!res.ok) throw new Error('OID not found');
+        const oidData = await res.json();
+
+        // Use extractEditableProps from adapter to get real values
+        const fileRes = await fetch(`${API.file}?path=${encodeURIComponent(oidData.filePath)}`);
+        if (!fileRes.ok) throw new Error('File not found');
+        const { content } = await fileRes.json();
+
+        // Parse style props from the source (simple regex fallback since we don't have direct adapter access)
+        const props: Record<string, string> = {};
+        const styleMatch = content.match(/style=\{\{([^}]+)\}\}/s);
+        if (styleMatch) {
+          const pairs = styleMatch[1];
+          for (const m of pairs.matchAll(/(\w+)\s*:\s*['"]([^'"]*)['"]/g)) {
+            props[m[1]] = m[2];
+          }
+        }
+
+        // Merge with defaults for common properties not yet set
+        const defaults: Record<string, string> = {
+          color: props.color ?? '',
+          backgroundColor: props.backgroundColor ?? '',
+          fontSize: props.fontSize ?? '',
+          width: props.width ?? 'auto',
+          height: props.height ?? 'auto',
+          margin: props.margin ?? '0',
+          padding: props.padding ?? '',
+          borderRadius: props.borderRadius ?? '',
+        };
+
+        if (!cancelled) setStyleProps(defaults);
+      } catch {
+        // Fallback to defaults if fetch fails
+        if (!cancelled) {
+          setStyleProps({
+            color: '',
+            backgroundColor: '',
+            fontSize: '',
+            width: 'auto',
+            height: 'auto',
+            margin: '0',
+            padding: '',
+            borderRadius: '',
+          });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    fetchProps();
+    return () => { cancelled = true; };
+  }, [oid]);
 
   const handleChange = useCallback(
     (cssProp: string, value: string) => {
       setStyleProps((prev) => ({ ...prev, [cssProp]: value }));
-      sendAction(oid, {
-        type: 'MODIFY_STYLE',
-        prop: cssProp,
-        value,
-      });
+
+      // Debounce: only send action after user stops typing
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        sendAction(oid, {
+          type: 'MODIFY_STYLE',
+          prop: cssProp,
+          value,
+        });
+      }, DEBOUNCE_MS);
     },
     [oid, sendAction],
   );
+
+  // Cleanup debounce on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  if (loading) {
+    return <div className="text-gray-500 text-sm">Loading properties...</div>;
+  }
 
   return (
     <div className="space-y-2">
@@ -88,7 +164,7 @@ function StyleEditor({ oid, sendAction }: { oid: string; sendAction: (id: string
             <div className="flex items-center gap-1 flex-1">
               <input
                 type="color"
-                value={value}
+                value={value || '#000000'}
                 onChange={(e) => handleChange(prop, e.target.value)}
                 className="w-6 h-6 rounded cursor-pointer"
               />

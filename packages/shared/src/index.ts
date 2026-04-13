@@ -12,7 +12,7 @@
 export interface OID {
   /** Unique ID, e.g. "oid-a1b2c3d4" */
   id: string;
-  /** Source file path relative to project root */
+  /** Source file absolute path */
   filePath: string;
   /** AST node location in source file */
   startLine: number;

@@ -128,15 +128,35 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
               if (projectDir) {
                 const absPath = path.resolve(projectDir, oid.filePath);
                 const oldContent = await fs.readFile(absPath, 'utf-8');
-                undoManager.push({
+                const undoEntry = undoManager.push({
                   filePath: absPath,
                   oldContent,
                   description: `${msg.action.type} on ${oid.tagName}`,
                 });
+
+                // Apply the action
+                const result = await codeModEngine.applyAndWrite(msg.oidId, msg.action);
+
+                // Record content after edit for consistency check
+                if (result.success) {
+                  try {
+                    const newContent = await fs.readFile(result.filePath, 'utf-8');
+                    undoManager.pushNewContent(undoEntry, newContent);
+                  } catch {
+                    // File read failed — skip consistency tracking for this entry
+                  }
+                }
+
+                wsHub.send(ws, {
+                  kind: 'action-result',
+                  success: result.success,
+                  filePath: result.filePath,
+                });
+                break;
               }
             }
 
-            // Apply the action
+            // No project dir or OID not found — apply without undo
             const result = await codeModEngine.applyAndWrite(msg.oidId, msg.action);
             wsHub.send(ws, {
               kind: 'action-result',
