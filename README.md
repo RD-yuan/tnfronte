@@ -1,5 +1,7 @@
 # TNFronte
 
+[English](./README.md) | [简体中文](./README-CN.md)
+
 **A framework-agnostic visual frontend development tool.**
 
 Edit any web project visually — React, Vue, Svelte, or plain HTML — with **zero vendor lock-in**. All changes write directly to your source code. No proprietary runtimes, no JSON schemas, no export step.
