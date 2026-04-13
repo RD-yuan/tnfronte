@@ -7,9 +7,9 @@ import { API } from '../config';
  * Handles postMessage communication with the Bridge script running
  * inside the user-project iframe.
  */
-export function useBridge() {
+export function useBridge(sendAction: (oidId: string, action: any) => void) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const { selectElement, setHoveredOID, setLayers } = useEditorStore();
+  const { selectElement, setHoveredOID } = useEditorStore();
 
   // Listen for Bridge messages
   useEffect(() => {
@@ -21,16 +21,10 @@ export function useBridge() {
       const msg = data.payload as BridgeToEditorMessage;
 
       switch (msg.type) {
-        case 'ELEMENT_SELECTED':
-          selectElement({
-            oid: msg.oid,
-            tagName: '',
-            filePath: '',
-            startLine: 0,
-            componentScope: '',
-            rect: msg.rect,
-          });
+        case 'ELEMENT_SELECTED': {
+          enrichSelection(msg.oid, msg.rect, selectElement);
           break;
+        }
 
         case 'ELEMENT_HOVERED':
           setHoveredOID(msg.oid);
@@ -38,20 +32,17 @@ export function useBridge() {
 
         case 'BRIDGE_READY':
           console.log('[TNFronte] Bridge is ready');
-          // Fetch layer data from the dev server
-          fetchLayers();
           break;
 
         case 'TEXT_EDIT_COMPLETE':
-          // TODO: send MODIFY_TEXT action via WebSocket to backend
-          console.log('[TNFronte] Text edit:', msg.oid, msg.newText);
+          sendAction(msg.oid, { type: 'MODIFY_TEXT', value: msg.newText });
           break;
       }
     }
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [selectElement, setHoveredOID]);
+  }, [selectElement, setHoveredOID, sendAction]);
 
   // Send command to Bridge inside iframe
   const sendToBridge = useCallback(
@@ -72,15 +63,47 @@ export function useBridge() {
     [],
   );
 
-  async function fetchLayers() {
-    try {
-      const res = await fetch(API.devLayers);
-      const data = await res.json();
-      setLayers(data);
-    } catch {
-      // Dev server may not be running yet
-    }
-  }
-
   return { iframeRef, sendToBridge };
+}
+
+/**
+ * Look up the OID in the backend to get tagName, filePath, startLine etc.
+ */
+async function enrichSelection(
+  oid: string,
+  rect: { x: number; y: number; width: number; height: number },
+  selectElement: (el: any) => void,
+) {
+  try {
+    const res = await fetch(API.oid(oid));
+    if (res.ok) {
+      const oidData = await res.json();
+      selectElement({
+        oid: oidData.id,
+        tagName: oidData.tagName,
+        filePath: oidData.filePath,
+        startLine: oidData.startLine,
+        componentScope: oidData.componentScope,
+        rect,
+      });
+    } else {
+      selectElement({
+        oid,
+        tagName: '',
+        filePath: '',
+        startLine: 0,
+        componentScope: '',
+        rect,
+      });
+    }
+  } catch {
+    selectElement({
+      oid,
+      tagName: '',
+      filePath: '',
+      startLine: 0,
+      componentScope: '',
+      rect,
+    });
+  }
 }

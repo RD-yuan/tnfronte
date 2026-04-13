@@ -15,3 +15,6 @@
  */
 
 export { ReactAdapter } from './react-adapter';
+export { injectOID } from './inject-oid';
+export { applyAction } from './apply-action';
+export { extractProps } from './extract-props';
