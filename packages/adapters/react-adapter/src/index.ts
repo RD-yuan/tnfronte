@@ -14,4 +14,7 @@
  *   Uses recast to preserve formatting.
  */
 
-export { ReactAdapter } from './react-adapter';
+export { ReactAdapter } from './react-adapter.js';
+export { injectOID } from './inject-oid.js';
+export { applyAction } from './apply-action.js';
+export { extractProps } from './extract-props.js';

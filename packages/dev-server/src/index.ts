@@ -8,4 +8,4 @@
  *  3. configureServer   — serves the Bridge bundle + OID Index API
  */
 
-export { tnfronteVitePlugin } from './vite-plugin';
+export { tnfronteVitePlugin } from './vite-plugin.ts';
