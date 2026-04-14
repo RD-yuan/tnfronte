@@ -7,8 +7,8 @@ import { useWebSocket } from './hooks/use-websocket';
 import { useEditorStore } from './store/editor-store';
 
 export function App() {
-  const { connected, undo, redo, openProject, fetchLayers } = useWebSocket();
-  const { setBackendConnected, setLayers } = useEditorStore();
+  const { connected, undo, redo, fetchLayers, sendAction } = useWebSocket();
+  const { setBackendConnected } = useEditorStore();
 
   // Sync connection state
   useEffect(() => {
@@ -43,11 +43,11 @@ export function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-canvas text-white">
-      <Toolbar />
+      <Toolbar connected={connected} undo={undo} redo={redo} />
       <div className="flex flex-1 overflow-hidden">
         <LayerTree />
         <Canvas />
-        <PropertyPanel />
+        <PropertyPanel sendAction={sendAction} />
       </div>
     </div>
   );

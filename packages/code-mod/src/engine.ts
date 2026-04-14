@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as prettier from 'prettier';
 
-import type { CodeAction, FrameworkAdapter, OID } from '@tnfronte/shared';
+import type { CodeAction, EditableProp, FrameworkAdapter, OID } from '@tnfronte/shared';
 import { OIDIndex } from '@tnfronte/oid-index';
 
 export class CodeModEngine {
@@ -24,7 +24,10 @@ export class CodeModEngine {
    * @returns The formatted source code after modification.
    * The caller is responsible for writing it to disk.
    */
-  async apply(oidId: string, action: CodeAction): Promise<{
+  async apply(
+    oidId: string,
+    action: CodeAction,
+  ): Promise<{
     filePath: string;
     code: string;
     success: boolean;
@@ -61,7 +64,10 @@ export class CodeModEngine {
   /**
    * Apply + write to disk in one step.
    */
-  async applyAndWrite(oidId: string, action: CodeAction): Promise<{
+  async applyAndWrite(
+    oidId: string,
+    action: CodeAction,
+  ): Promise<{
     filePath: string;
     success: boolean;
   }> {
@@ -74,6 +80,34 @@ export class CodeModEngine {
     await fs.rename(tmpPath, result.filePath);
 
     return { filePath: result.filePath, success: true };
+  }
+
+  /**
+   * Extract editable props for the source node associated with the given OID.
+   */
+  async extractEditableProps(oidId: string): Promise<{
+    filePath: string;
+    props: EditableProp[];
+    success: boolean;
+  }> {
+    const oid = this.oidIndex.getById(oidId);
+    if (!oid) {
+      return { filePath: '', props: [], success: false };
+    }
+
+    const adapter = this.findAdapter(oid.filePath);
+    if (!adapter) {
+      return { filePath: oid.filePath, props: [], success: false };
+    }
+
+    try {
+      const source = await fs.readFile(oid.filePath, 'utf-8');
+      const props = await adapter.extractEditableProps(source, oid);
+      return { filePath: oid.filePath, props, success: true };
+    } catch (err) {
+      console.error(`[CodeModEngine] extractEditableProps failed:`, err);
+      return { filePath: oid.filePath, props: [], success: false };
+    }
   }
 
   // ─── Helpers ────────────────────────────────────────────────────────

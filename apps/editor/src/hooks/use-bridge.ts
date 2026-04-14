@@ -22,12 +22,13 @@ export function useBridge() {
 
       switch (msg.type) {
         case 'ELEMENT_SELECTED':
+          const layer = useEditorStore.getState().layers.find((item) => item.oid === msg.oid);
           selectElement({
             oid: msg.oid,
-            tagName: '',
-            filePath: '',
-            startLine: 0,
-            componentScope: '',
+            tagName: layer?.tagName ?? '',
+            filePath: layer?.filePath ?? '',
+            startLine: layer?.line ?? 0,
+            componentScope: layer?.component ?? '',
             rect: msg.rect,
           });
           break;
@@ -54,29 +55,28 @@ export function useBridge() {
   }, [selectElement, setHoveredOID]);
 
   // Send command to Bridge inside iframe
-  const sendToBridge = useCallback(
-    (payload: any) => {
-      const iframe = iframeRef.current;
-      if (!iframe?.contentWindow) return;
-      iframe.contentWindow.postMessage(
-        {
-          channel: 'tnfronte-bridge',
-          version: 1,
-          direction: 'editor→bridge',
-          payload,
-          timestamp: Date.now(),
-        },
-        '*',
-      );
-    },
-    [],
-  );
+  const sendToBridge = useCallback((payload: any) => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentWindow) return;
+    iframe.contentWindow.postMessage(
+      {
+        channel: 'tnfronte-bridge',
+        version: 1,
+        direction: 'editor→bridge',
+        payload,
+        timestamp: Date.now(),
+      },
+      '*',
+    );
+  }, []);
 
   async function fetchLayers() {
     try {
       const res = await fetch(API.devLayers);
       const data = await res.json();
-      setLayers(data);
+      if (Array.isArray(data)) {
+        setLayers(data);
+      }
     } catch {
       // Dev server may not be running yet
     }

@@ -9,7 +9,8 @@
 export const BACKEND_URL = import.meta.env.VITE_TNFRONTE_BACKEND_URL || 'http://localhost:4000';
 
 /** User project dev-server base URL (for bridge API) */
-export const DEV_SERVER_URL = import.meta.env.VITE_TNFRONTE_DEV_SERVER_URL || 'http://localhost:5173';
+export const DEV_SERVER_URL =
+  import.meta.env.VITE_TNFRONTE_DEV_SERVER_URL || 'http://localhost:5173';
 
 /** WebSocket URL for backend communication */
 export const WS_URL = BACKEND_URL.replace(/^http/, 'ws') + '/ws';
@@ -21,6 +22,7 @@ export const API = {
   projectOpen: `${BACKEND_URL}/api/project/open`,
   layers: `${BACKEND_URL}/api/layers`,
   oid: (id: string) => `${BACKEND_URL}/api/oid/${id}`,
+  oidProps: (id: string) => `${BACKEND_URL}/api/oid/${id}/props`,
   file: `${BACKEND_URL}/api/file`,
   undo: `${BACKEND_URL}/api/undo`,
   redo: `${BACKEND_URL}/api/redo`,

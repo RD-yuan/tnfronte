@@ -1,8 +1,8 @@
 /**
  * apply-action.ts
  *
- * Locates a JSX element by its `data-oid` attribute and applies a CodeAction
- * (modify style, prop, text, move, resize, delete, insert, reorder).
+ * Locates a JSX element by the OID's source location (with data-oid as a
+ * fallback for injected code) and applies a CodeAction.
  *
  * Uses @babel/parser + @babel/traverse + @babel/generator for AST
  * manipulation. Prettier (in code-mod engine) handles formatting.
@@ -31,7 +31,7 @@ export function applyAction(source: string, oid: OID, action: CodeAction): strin
     JSXOpeningElement(path) {
       // ── INSERT: find parent by OID and insert child ───────────────
       if (action.type === 'INSERT') {
-        if (!findMatchingOID(path, action.parentOID)) return;
+        if (action.parentOID !== oid.id || !matchesOID(path, oid)) return;
 
         const parentEl = path.parentPath;
         if (!parentEl?.isJSXElement()) return;
@@ -59,7 +59,7 @@ export function applyAction(source: string, oid: OID, action: CodeAction): strin
       }
 
       // ── Other actions: find element by its own OID ────────────────
-      if (!findMatchingOID(path, oid.id)) return;
+      if (!matchesOID(path, oid)) return;
 
       switch (action.type) {
         case 'MODIFY_STYLE':
@@ -91,7 +91,12 @@ export function applyAction(source: string, oid: OID, action: CodeAction): strin
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
-function findMatchingOID(path: any, oidId: string): boolean {
+function matchesOID(path: any, oid: OID): boolean {
+  const loc = path.node.loc?.start;
+  if (loc && loc.line === oid.startLine && loc.column === oid.startCol) {
+    return true;
+  }
+
   const attrs: t.JSXAttribute[] = path.node.attributes;
   return attrs.some(
     (attr) =>
@@ -99,7 +104,7 @@ function findMatchingOID(path: any, oidId: string): boolean {
       t.isJSXIdentifier(attr.name) &&
       attr.name.name === 'data-oid' &&
       t.isStringLiteral(attr.value) &&
-      attr.value.value === oidId,
+      attr.value.value === oid.id,
   );
 }
 
@@ -117,9 +122,7 @@ function modifyStyle(path: any, cssProp: string, value: string) {
       if (existing) {
         existing.value = t.stringLiteral(value);
       } else {
-        expr.properties.push(
-          t.objectProperty(t.identifier(jsKey), t.stringLiteral(value)),
-        );
+        expr.properties.push(t.objectProperty(t.identifier(jsKey), t.stringLiteral(value)));
       }
     }
   } else {
@@ -128,9 +131,7 @@ function modifyStyle(path: any, cssProp: string, value: string) {
       t.jsxAttribute(
         t.jsxIdentifier('style'),
         t.jsxExpressionContainer(
-          t.objectExpression([
-            t.objectProperty(t.identifier(jsKey), t.stringLiteral(value)),
-          ]),
+          t.objectExpression([t.objectProperty(t.identifier(jsKey), t.stringLiteral(value))]),
         ),
       ),
     );
@@ -142,9 +143,7 @@ function modifyProp(path: any, prop: string, value: string) {
   if (existing && t.isJSXAttribute(existing)) {
     existing.value = t.stringLiteral(value);
   } else {
-    path.node.attributes.push(
-      t.jsxAttribute(t.jsxIdentifier(prop), t.stringLiteral(value)),
-    );
+    path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier(prop), t.stringLiteral(value)));
   }
 }
 
@@ -163,18 +162,19 @@ function modifyText(path: any, newText: string) {
 function deleteElement(path: any) {
   const jsxEl = path.parentPath;
   if (!jsxEl?.isJSXElement()) return;
-  const grandParent = jsxEl.parentPath;
-  if (grandParent?.isJSXElement() || grandParent?.isJSXFragment()) {
-    const children = grandParent.node.children as any[];
-    const idx = children.indexOf(jsxEl.node);
-    if (idx > -1) children.splice(idx, 1);
+  const parent = jsxEl.parentPath;
+
+  if (parent?.isJSXElement() || parent?.isJSXFragment()) {
+    jsxEl.remove();
+    return;
   }
+
+  throw new Error('Cannot delete the root JSX element');
 }
 
 function findAttr(path: any, name: string): t.JSXAttribute | undefined {
   return path.node.attributes.find(
-    (a: t.JSXAttribute) =>
-      t.isJSXAttribute(a) && t.isJSXIdentifier(a.name) && a.name.name === name,
+    (a: t.JSXAttribute) => t.isJSXAttribute(a) && t.isJSXIdentifier(a.name) && a.name.name === name,
   );
 }
 

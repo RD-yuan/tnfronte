@@ -1,15 +1,27 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { useEditorStore } from '../store/editor-store';
-import { useWebSocket } from '../hooks/use-websocket';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { EditableProp } from '@tnfronte/shared';
 import { API } from '../config';
+import { useEditorStore } from '../store/editor-store';
 
-/** Debounce delay for style/prop changes (ms) */
 const DEBOUNCE_MS = 400;
 
-export function PropertyPanel() {
+const DEFAULT_STYLE_PROPS: Record<string, string> = {
+  color: '',
+  backgroundColor: '',
+  fontSize: '',
+  width: 'auto',
+  height: 'auto',
+  margin: '0',
+  padding: '',
+  borderRadius: '',
+};
+
+interface PropertyPanelProps {
+  sendAction: (id: string, action: any) => void;
+}
+
+export function PropertyPanel({ sendAction }: PropertyPanelProps) {
   const { selectedElement, activeTab, setActiveTab } = useEditorStore();
-  const { sendAction } = useWebSocket();
 
   if (!selectedElement) {
     return (
@@ -21,7 +33,6 @@ export function PropertyPanel() {
 
   return (
     <div className="w-72 bg-panel border-l border-gray-700 flex flex-col">
-      {/* Tabs */}
       <div className="flex border-b border-gray-700">
         {(['style', 'props', 'events'] as const).map((tab) => (
           <button
@@ -38,7 +49,6 @@ export function PropertyPanel() {
         ))}
       </div>
 
-      {/* Element info */}
       <div className="px-3 py-2 border-b border-gray-700">
         <div className="text-white text-sm font-mono">
           &lt;{selectedElement.tagName || 'element'}&gt;
@@ -48,7 +58,6 @@ export function PropertyPanel() {
         </div>
       </div>
 
-      {/* Tab content */}
       <div className="flex-1 overflow-auto p-3 space-y-3">
         {activeTab === 'style' && <StyleEditor oid={selectedElement.oid} sendAction={sendAction} />}
         {activeTab === 'props' && <PropsEditor />}
@@ -58,65 +67,44 @@ export function PropertyPanel() {
   );
 }
 
-// ─── Style Editor (reads actual props from backend) ────────────────────
-
-function StyleEditor({ oid, sendAction }: { oid: string; sendAction: (id: string, action: any) => void }) {
+function StyleEditor({
+  oid,
+  sendAction,
+}: {
+  oid: string;
+  sendAction: (id: string, action: any) => void;
+}) {
   const [styleProps, setStyleProps] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Fetch actual props when selection changes
   useEffect(() => {
     let cancelled = false;
 
     async function fetchProps() {
       setLoading(true);
+
       try {
-        const res = await fetch(`${API.oid(oid)}`);
-        if (!res.ok) throw new Error('OID not found');
-        const oidData = await res.json();
+        const res = await fetch(API.oidProps(oid));
+        if (!res.ok) throw new Error('Props not found');
 
-        // Use extractEditableProps from adapter to get real values
-        const fileRes = await fetch(`${API.file}?path=${encodeURIComponent(oidData.filePath)}`);
-        if (!fileRes.ok) throw new Error('File not found');
-        const { content } = await fileRes.json();
-
-        // Parse style props from the source (simple regex fallback since we don't have direct adapter access)
-        const props: Record<string, string> = {};
-        const styleMatch = content.match(/style=\{\{([^}]+)\}\}/s);
-        if (styleMatch) {
-          const pairs = styleMatch[1];
-          for (const m of pairs.matchAll(/(\w+)\s*:\s*['"]([^'"]*)['"]/g)) {
-            props[m[1]] = m[2];
+        const data = (await res.json()) as { props?: EditableProp[] };
+        const extracted = (data.props ?? []).reduce<Record<string, string>>((acc, prop) => {
+          if (prop.name.startsWith('style.')) {
+            acc[prop.name.slice('style.'.length)] = prop.value;
           }
-        }
+          return acc;
+        }, {});
 
-        // Merge with defaults for common properties not yet set
-        const defaults: Record<string, string> = {
-          color: props.color ?? '',
-          backgroundColor: props.backgroundColor ?? '',
-          fontSize: props.fontSize ?? '',
-          width: props.width ?? 'auto',
-          height: props.height ?? 'auto',
-          margin: props.margin ?? '0',
-          padding: props.padding ?? '',
-          borderRadius: props.borderRadius ?? '',
-        };
-
-        if (!cancelled) setStyleProps(defaults);
-      } catch {
-        // Fallback to defaults if fetch fails
         if (!cancelled) {
           setStyleProps({
-            color: '',
-            backgroundColor: '',
-            fontSize: '',
-            width: 'auto',
-            height: 'auto',
-            margin: '0',
-            padding: '',
-            borderRadius: '',
+            ...DEFAULT_STYLE_PROPS,
+            ...extracted,
           });
+        }
+      } catch {
+        if (!cancelled) {
+          setStyleProps({ ...DEFAULT_STYLE_PROPS });
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -124,14 +112,15 @@ function StyleEditor({ oid, sendAction }: { oid: string; sendAction: (id: string
     }
 
     fetchProps();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [oid]);
 
   const handleChange = useCallback(
     (cssProp: string, value: string) => {
       setStyleProps((prev) => ({ ...prev, [cssProp]: value }));
 
-      // Debounce: only send action after user stops typing
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         sendAction(oid, {
@@ -144,7 +133,6 @@ function StyleEditor({ oid, sendAction }: { oid: string; sendAction: (id: string
     [oid, sendAction],
   );
 
-  // Cleanup debounce on unmount
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -189,22 +177,18 @@ function StyleEditor({ oid, sendAction }: { oid: string; sendAction: (id: string
   );
 }
 
-// ─── Props Editor ──────────────────────────────────────────────────────
-
 function PropsEditor() {
   return (
     <div className="text-gray-500 text-sm">
-      <p>Props editor — connect to backend to load actual props.</p>
+      <p>Props editor - connect to backend to load actual props.</p>
     </div>
   );
 }
 
-// ─── Events Editor ─────────────────────────────────────────────────────
-
 function EventsEditor() {
   return (
     <div className="text-gray-500 text-sm">
-      <p>Event bindings — coming soon.</p>
+      <p>Event bindings - coming soon.</p>
     </div>
   );
 }
