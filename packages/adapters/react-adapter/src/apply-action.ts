@@ -89,7 +89,7 @@ export function applyAction(source: string, oid: OID, action: CodeAction): strin
   return output.code;
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────
+// ─── OID Matching ──────────────────────────────────────────────────────
 
 function matchesOID(path: any, oid: OID): boolean {
   const loc = path.node.loc?.start;
@@ -98,7 +98,7 @@ function matchesOID(path: any, oid: OID): boolean {
   }
 
   const attrs: t.JSXAttribute[] = path.node.attributes;
-  return attrs.some(
+  const hasDataOid = attrs.some(
     (attr) =>
       t.isJSXAttribute(attr) &&
       t.isJSXIdentifier(attr.name) &&
@@ -106,7 +106,26 @@ function matchesOID(path: any, oid: OID): boolean {
       t.isStringLiteral(attr.value) &&
       attr.value.value === oid.id,
   );
+  if (hasDataOid) return true;
+
+  // Strategy 2: AST location matching
+  if (typeof oidOrId !== 'string') {
+    const oid = oidOrId;
+    const loc = path.node.loc;
+    if (loc) {
+      return (
+        loc.start.line === oid.startLine &&
+        loc.start.column === oid.startCol &&
+        loc.end.line === oid.endLine &&
+        loc.end.column === oid.endCol
+      );
+    }
+  }
+
+  return false;
 }
+
+// ─── Style / Prop / Text Helpers ───────────────────────────────────────
 
 function modifyStyle(path: any, cssProp: string, value: string) {
   const jsKey = camelCase(cssProp);
@@ -179,5 +198,5 @@ function findAttr(path: any, name: string): t.JSXAttribute | undefined {
 }
 
 function camelCase(s: string): string {
-  return s.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+  return s.replace(/-([a-z])/g, (_: string, c: string) => c.toUpperCase());
 }

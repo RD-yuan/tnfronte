@@ -6,6 +6,12 @@ import type { FrameworkAdapter, InjectionResult, LayerInfo } from '@tnfronte/sha
 export interface TnfrontePluginOptions {
   /** Extra framework adapters to register. */
   adapters?: FrameworkAdapter[];
+  /**
+   * Origin of the Editor UI (e.g. 'http://localhost:5173').
+   * Used by Bridge for postMessage security validation.
+   * If not set, Bridge will accept messages from any origin.
+   */
+  editorOrigin?: string;
 }
 
 export function tnfronteVitePlugin(options: TnfrontePluginOptions = {}): Plugin {

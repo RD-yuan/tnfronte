@@ -7,9 +7,9 @@ import { API } from '../config';
  * Handles postMessage communication with the Bridge script running
  * inside the user-project iframe.
  */
-export function useBridge() {
+export function useBridge(sendAction: (oidId: string, action: any) => void) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const { selectElement, setHoveredOID, setLayers } = useEditorStore();
+  const { selectElement, setHoveredOID } = useEditorStore();
 
   // Listen for Bridge messages
   useEffect(() => {
@@ -32,6 +32,7 @@ export function useBridge() {
             rect: msg.rect,
           });
           break;
+        }
 
         case 'ELEMENT_HOVERED':
           setHoveredOID(msg.oid);
@@ -39,20 +40,17 @@ export function useBridge() {
 
         case 'BRIDGE_READY':
           console.log('[TNFronte] Bridge is ready');
-          // Fetch layer data from the dev server
-          fetchLayers();
           break;
 
         case 'TEXT_EDIT_COMPLETE':
-          // TODO: send MODIFY_TEXT action via WebSocket to backend
-          console.log('[TNFronte] Text edit:', msg.oid, msg.newText);
+          sendAction(msg.oid, { type: 'MODIFY_TEXT', value: msg.newText });
           break;
       }
     }
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [selectElement, setHoveredOID]);
+  }, [selectElement, setHoveredOID, sendAction]);
 
   // Send command to Bridge inside iframe
   const sendToBridge = useCallback((payload: any) => {
@@ -80,7 +78,14 @@ export function useBridge() {
     } catch {
       // Dev server may not be running yet
     }
+  } catch {
+    selectElement({
+      oid,
+      tagName: '',
+      filePath: '',
+      startLine: 0,
+      componentScope: '',
+      rect,
+    });
   }
-
-  return { iframeRef, sendToBridge };
 }

@@ -5,9 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "echo 'test-fixture is dev-only, skipping build'"
   },
   "dependencies": {
+    "@tnfronte/bridge": "workspace:^",
+    "@tnfronte/dev-server": "workspace:^",
+    "@tnfronte/oid-index": "workspace:^",
+    "@tnfronte/react-adapter": "workspace:^",
+    "@tnfronte/shared": "workspace:^",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },

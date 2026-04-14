@@ -6,6 +6,9 @@ import { PropertyPanel } from './components/PropertyPanel';
 import { useWebSocket } from './hooks/use-websocket';
 import { useEditorStore } from './store/editor-store';
 
+/** Default project path — the test-fixture project */
+const DEFAULT_PROJECT_DIR = '/root/tnfronte/test-fixture';
+
 export function App() {
   const { connected, undo, redo, fetchLayers, sendAction } = useWebSocket();
   const { setBackendConnected } = useEditorStore();
@@ -14,6 +17,13 @@ export function App() {
   useEffect(() => {
     setBackendConnected(connected);
   }, [connected, setBackendConnected]);
+
+  // When backend connects, open the default project and fetch layers
+  useEffect(() => {
+    if (!connected) return;
+    openProject(DEFAULT_PROJECT_DIR);
+    fetchLayers();
+  }, [connected, openProject, fetchLayers]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -35,11 +45,6 @@ export function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [undo, redo]);
-
-  // On mount, try to fetch layers from backend
-  useEffect(() => {
-    fetchLayers();
-  }, [fetchLayers]);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-canvas text-white">
