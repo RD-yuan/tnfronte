@@ -21,8 +21,16 @@ export function useBridge(sendAction: (oidId: string, action: any) => void) {
       const msg = data.payload as BridgeToEditorMessage;
 
       switch (msg.type) {
-        case 'ELEMENT_SELECTED': {
-          enrichSelection(msg.oid, msg.rect, selectElement);
+        case 'ELEMENT_SELECTED':
+          const layer = useEditorStore.getState().layers.find((item) => item.oid === msg.oid);
+          selectElement({
+            oid: msg.oid,
+            tagName: layer?.tagName ?? '',
+            filePath: layer?.filePath ?? '',
+            startLine: layer?.line ?? 0,
+            componentScope: layer?.component ?? '',
+            rect: msg.rect,
+          });
           break;
         }
 
@@ -45,56 +53,30 @@ export function useBridge(sendAction: (oidId: string, action: any) => void) {
   }, [selectElement, setHoveredOID, sendAction]);
 
   // Send command to Bridge inside iframe
-  const sendToBridge = useCallback(
-    (payload: any) => {
-      const iframe = iframeRef.current;
-      if (!iframe?.contentWindow) return;
-      iframe.contentWindow.postMessage(
-        {
-          channel: 'tnfronte-bridge',
-          version: 1,
-          direction: 'editor→bridge',
-          payload,
-          timestamp: Date.now(),
-        },
-        '*',
-      );
-    },
-    [],
-  );
+  const sendToBridge = useCallback((payload: any) => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentWindow) return;
+    iframe.contentWindow.postMessage(
+      {
+        channel: 'tnfronte-bridge',
+        version: 1,
+        direction: 'editor→bridge',
+        payload,
+        timestamp: Date.now(),
+      },
+      '*',
+    );
+  }, []);
 
-  return { iframeRef, sendToBridge };
-}
-
-/**
- * Look up the OID in the backend to get tagName, filePath, startLine etc.
- */
-async function enrichSelection(
-  oid: string,
-  rect: { x: number; y: number; width: number; height: number },
-  selectElement: (el: any) => void,
-) {
-  try {
-    const res = await fetch(API.oid(oid));
-    if (res.ok) {
-      const oidData = await res.json();
-      selectElement({
-        oid: oidData.id,
-        tagName: oidData.tagName,
-        filePath: oidData.filePath,
-        startLine: oidData.startLine,
-        componentScope: oidData.componentScope,
-        rect,
-      });
-    } else {
-      selectElement({
-        oid,
-        tagName: '',
-        filePath: '',
-        startLine: 0,
-        componentScope: '',
-        rect,
-      });
+  async function fetchLayers() {
+    try {
+      const res = await fetch(API.devLayers);
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setLayers(data);
+      }
+    } catch {
+      // Dev server may not be running yet
     }
   } catch {
     selectElement({

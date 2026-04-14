@@ -76,6 +76,19 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     return oid;
   });
 
+  // Extract editable props for a specific OID
+  fastify.get<{ Params: { id: string } }>('/api/oid/:id/props', async (req, reply) => {
+    const result = await codeModEngine.extractEditableProps(req.params.id);
+    if (!result.success) {
+      return reply.status(404).send({ error: 'OID not found or adapter unavailable' });
+    }
+
+    return {
+      filePath: result.filePath,
+      props: result.props,
+    };
+  });
+
   // Read file
   fastify.get<{ Querystring: { path: string } }>('/api/file', async (req, reply) => {
     const filePath = req.query.path;

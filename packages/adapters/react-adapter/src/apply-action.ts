@@ -1,8 +1,8 @@
 /**
  * apply-action.ts
  *
- * Locates a JSX element by its OID (via data-oid attribute or AST location)
- * and applies a CodeAction.
+ * Locates a JSX element by the OID's source location (with data-oid as a
+ * fallback for injected code) and applies a CodeAction.
  *
  * Uses @babel/parser + @babel/traverse + @babel/generator for AST
  * manipulation. Prettier (in code-mod engine) handles formatting.
@@ -31,7 +31,7 @@ export function applyAction(source: string, oid: OID, action: CodeAction): strin
     JSXOpeningElement(path) {
       // ── INSERT: find parent by OID and insert child ───────────────
       if (action.type === 'INSERT') {
-        if (!matchesOID(path, action.parentOID)) return;
+        if (action.parentOID !== oid.id || !matchesOID(path, oid)) return;
 
         const parentEl = path.parentPath;
         if (!parentEl?.isJSXElement()) return;
@@ -91,18 +91,12 @@ export function applyAction(source: string, oid: OID, action: CodeAction): strin
 
 // ─── OID Matching ──────────────────────────────────────────────────────
 
-/**
- * Match a JSXOpeningElement against an OID.
- *
- * Strategy 1: Look for a data-oid attribute matching the OID id string.
- * Strategy 2: Fall back to AST location (startLine, startCol) matching.
- *   This is needed because data-oid is only injected at dev-time by the
- *   vite-plugin and is NOT present in the source file on disk.
- */
-function matchesOID(path: any, oidOrId: OID | string): boolean {
-  const oidId = typeof oidOrId === 'string' ? oidOrId : oidOrId.id;
+function matchesOID(path: any, oid: OID): boolean {
+  const loc = path.node.loc?.start;
+  if (loc && loc.line === oid.startLine && loc.column === oid.startCol) {
+    return true;
+  }
 
-  // Strategy 1: data-oid attribute
   const attrs: t.JSXAttribute[] = path.node.attributes;
   const hasDataOid = attrs.some(
     (attr) =>
@@ -110,7 +104,7 @@ function matchesOID(path: any, oidOrId: OID | string): boolean {
       t.isJSXIdentifier(attr.name) &&
       attr.name.name === 'data-oid' &&
       t.isStringLiteral(attr.value) &&
-      attr.value.value === oidId,
+      attr.value.value === oid.id,
   );
   if (hasDataOid) return true;
 
@@ -147,9 +141,7 @@ function modifyStyle(path: any, cssProp: string, value: string) {
       if (existing) {
         existing.value = t.stringLiteral(value);
       } else {
-        expr.properties.push(
-          t.objectProperty(t.identifier(jsKey), t.stringLiteral(value)),
-        );
+        expr.properties.push(t.objectProperty(t.identifier(jsKey), t.stringLiteral(value)));
       }
     }
   } else {
@@ -158,9 +150,7 @@ function modifyStyle(path: any, cssProp: string, value: string) {
       t.jsxAttribute(
         t.jsxIdentifier('style'),
         t.jsxExpressionContainer(
-          t.objectExpression([
-            t.objectProperty(t.identifier(jsKey), t.stringLiteral(value)),
-          ]),
+          t.objectExpression([t.objectProperty(t.identifier(jsKey), t.stringLiteral(value))]),
         ),
       ),
     );
@@ -172,9 +162,7 @@ function modifyProp(path: any, prop: string, value: string) {
   if (existing && t.isJSXAttribute(existing)) {
     existing.value = t.stringLiteral(value);
   } else {
-    path.node.attributes.push(
-      t.jsxAttribute(t.jsxIdentifier(prop), t.stringLiteral(value)),
-    );
+    path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier(prop), t.stringLiteral(value)));
   }
 }
 
@@ -193,18 +181,19 @@ function modifyText(path: any, newText: string) {
 function deleteElement(path: any) {
   const jsxEl = path.parentPath;
   if (!jsxEl?.isJSXElement()) return;
-  const grandParent = jsxEl.parentPath;
-  if (grandParent?.isJSXElement() || grandParent?.isJSXFragment()) {
-    const children = grandParent.node.children as any[];
-    const idx = children.indexOf(jsxEl.node);
-    if (idx > -1) children.splice(idx, 1);
+  const parent = jsxEl.parentPath;
+
+  if (parent?.isJSXElement() || parent?.isJSXFragment()) {
+    jsxEl.remove();
+    return;
   }
+
+  throw new Error('Cannot delete the root JSX element');
 }
 
 function findAttr(path: any, name: string): t.JSXAttribute | undefined {
   return path.node.attributes.find(
-    (a: t.JSXAttribute) =>
-      t.isJSXAttribute(a) && t.isJSXIdentifier(a.name) && a.name.name === name,
+    (a: t.JSXAttribute) => t.isJSXAttribute(a) && t.isJSXIdentifier(a.name) && a.name.name === name,
   );
 }
 

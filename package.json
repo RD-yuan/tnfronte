@@ -4,11 +4,11 @@
   "private": true,
   "description": "A framework-agnostic visual frontend development tool — edit any web project visually with zero vendor lock-in.",
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
-    "lint": "turbo run lint",
+    "dev": "corepack pnpm -r --parallel dev",
+    "build": "corepack pnpm -r build",
+    "lint": "corepack pnpm -r --if-present lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
-    "clean": "turbo run clean && rimraf node_modules"
+    "clean": "corepack pnpm -r clean && rimraf node_modules"
   },
   "devDependencies": {
     "@types/babel__generator": "^7.27.0",

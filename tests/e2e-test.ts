@@ -66,9 +66,7 @@ async function main() {
   console.log('🎨 Step 3: Code Mod — Modify Button Style');
 
   // Find the "Increment" button (first button)
-  const buttonOID = injectionResult.mappings.find(
-    (m) => m.tagName === 'button',
-  );
+  const buttonOID = injectionResult.mappings.find((m) => m.tagName === 'button');
 
   if (!buttonOID) {
     console.log('   ❌ Could not find a button element!');
@@ -88,6 +86,13 @@ async function main() {
 
   if (result.success) {
     console.log('   ✅ Style modification succeeded\n');
+    const hasStyleChange =
+      result.code.includes("backgroundColor: '#10b981'") ||
+      result.code.includes('backgroundColor:"#10b981"');
+    if (!hasStyleChange) {
+      console.log('   ❌ Style change was not written into the source');
+      process.exit(1);
+    }
     const modifiedLines = result.code.split('\n');
     for (let i = 0; i < modifiedLines.length; i++) {
       if (modifiedLines[i].includes('#10b981') || modifiedLines[i].includes('backgroundColor')) {
@@ -119,6 +124,10 @@ async function main() {
 
   if (textResult.success) {
     console.log('   ✅ Text modification succeeded\n');
+    if (!textResult.code.includes('Hello TNFronte!')) {
+      console.log('   ❌ Updated text was not written into the source');
+      process.exit(1);
+    }
     const textLines = textResult.code.split('\n');
     for (let i = 0; i < textLines.length; i++) {
       if (textLines[i].includes('Hello TNFronte')) {
@@ -146,7 +155,8 @@ async function main() {
     const hasFooter = deleteResult.code.includes('<footer');
     console.log(`   ✅ Delete succeeded — <footer> tag in output: ${hasFooter}`);
     if (hasFooter) {
-      console.log('   ⚠️  Warning: footer tag still present (delete may need investigation)');
+      console.log('   ❌ Footer tag is still present after delete');
+      process.exit(1);
     } else {
       console.log('   ✅ Footer completely removed from code');
     }
