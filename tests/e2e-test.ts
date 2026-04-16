@@ -78,6 +78,51 @@ async function main() {
   const codeModEngine = new CodeModEngine(oidIndex);
   codeModEngine.registerAdapter(new ReactAdapter());
 
+  const extractedPropsResult = await codeModEngine.extractEditableProps(buttonOID.id);
+  if (!extractedPropsResult.success) {
+    console.log('   ❌ Prop extraction failed!');
+    process.exit(1);
+  }
+
+  const classNameProp = extractedPropsResult.props.find((prop) => prop.name === 'className');
+  const onClickProp = extractedPropsResult.props.find((prop) => prop.name === 'onClick');
+  const buttonTextProp = extractedPropsResult.props.find((prop) => prop.name === 'children');
+  if (!classNameProp || classNameProp.value !== 'btn btn-primary') {
+    console.log('   ❌ className prop was not extracted correctly!');
+    process.exit(1);
+  }
+  if (!onClickProp || onClickProp.type !== 'expression') {
+    console.log('   ❌ onClick expression was not extracted correctly!');
+    process.exit(1);
+  }
+  if (!buttonTextProp || buttonTextProp.value !== 'Increment') {
+    console.log('   ❌ button text was not extracted correctly!');
+    process.exit(1);
+  }
+
+  console.log('🔎 Step 3: Extract Editable Props');
+  console.log(`   ✅ Extracted ${extractedPropsResult.props.length} editable props`);
+  console.log(`   className = ${classNameProp.value}`);
+  console.log(`   onClick = ${onClickProp.value}\n`);
+
+  console.log('🏷️  Step 4: Code Mod - Modify Button Prop');
+  const propResult = await codeModEngine.apply(buttonOID.id, {
+    type: 'MODIFY_PROP',
+    prop: 'title',
+    value: 'Increment counter',
+  });
+
+  if (propResult.success) {
+    if (!propResult.code.includes('title="Increment counter"')) {
+      console.log('   ❌ Prop change was not written into the source');
+      process.exit(1);
+    }
+    console.log('   ✅ Prop modification succeeded\n');
+  } else {
+    console.log('   ❌ Prop modification failed!');
+    process.exit(1);
+  }
+
   const result = await codeModEngine.apply(buttonOID.id, {
     type: 'MODIFY_STYLE',
     prop: 'backgroundColor',
@@ -99,6 +144,14 @@ async function main() {
         console.log(`   ${String(i + 1).padStart(3)} | ${modifiedLines[i]}`);
       }
     }
+
+    const modifiedProps = await new ReactAdapter().extractEditableProps(result.code, buttonOID);
+    const backgroundColorProp = modifiedProps.find((prop) => prop.name === 'style.backgroundColor');
+    if (!backgroundColorProp || backgroundColorProp.value !== '#10b981') {
+      console.log('   ❌ Modified inline style was not extracted correctly');
+      process.exit(1);
+    }
+
     console.log();
   } else {
     console.log('   ❌ Style modification failed!');

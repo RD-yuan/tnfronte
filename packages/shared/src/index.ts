@@ -57,7 +57,7 @@ export interface FrameworkAdapter {
 
 export type CodeAction =
   | { type: 'MODIFY_STYLE'; prop: string; value: string }
-  | { type: 'MODIFY_PROP'; prop: string; value: string }
+  | { type: 'MODIFY_PROP'; prop: string; value: string | number | boolean }
   | { type: 'MODIFY_TEXT'; value: string }
   | { type: 'MOVE'; deltaX: number; deltaY: number; positionProp: string }
   | { type: 'RESIZE'; width?: number; height?: number }

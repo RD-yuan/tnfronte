@@ -46,7 +46,7 @@ export function App() {
       <Toolbar connected={connected} undo={undo} redo={redo} />
       <div className="flex flex-1 overflow-hidden">
         <LayerTree />
-        <Canvas />
+        <Canvas sendAction={sendAction} />
         <PropertyPanel sendAction={sendAction} />
       </div>
     </div>

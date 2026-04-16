@@ -138,12 +138,12 @@ function modifyStyle(path: any, cssProp: string, value: string) {
   }
 }
 
-function modifyProp(path: any, prop: string, value: string) {
+function modifyProp(path: any, prop: string, value: string | number | boolean) {
   const existing = findAttr(path, prop);
   if (existing && t.isJSXAttribute(existing)) {
-    existing.value = t.stringLiteral(value);
+    existing.value = toJSXAttributeValue(value);
   } else {
-    path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier(prop), t.stringLiteral(value)));
+    path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier(prop), toJSXAttributeValue(value)));
   }
 }
 
@@ -180,4 +180,14 @@ function findAttr(path: any, name: string): t.JSXAttribute | undefined {
 
 function camelCase(s: string): string {
   return s.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
+function toJSXAttributeValue(value: string | number | boolean) {
+  if (typeof value === 'string') {
+    return t.stringLiteral(value);
+  }
+
+  return t.jsxExpressionContainer(
+    typeof value === 'number' ? t.numericLiteral(value) : t.booleanLiteral(value),
+  );
 }

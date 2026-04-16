@@ -193,7 +193,14 @@ export class Bridge {
 
   private setSelection(oid: string | null) {
     this.selectedOID = oid;
-    if (oid) this.highlightElement(oid);
+    if (oid) {
+      this.highlightElement(oid);
+      return;
+    }
+
+    document
+      .querySelectorAll('.__tnfronte_highlight')
+      .forEach((element) => element.classList.remove('__tnfronte_highlight'));
   }
 
   private startInlineEdit(oid: string) {
@@ -205,24 +212,29 @@ export class Bridge {
     el.contentEditable = 'true';
     el.focus();
 
+    const cleanup = () => {
+      el.removeEventListener('blur', onBlur);
+      el.removeEventListener('keydown', onKeyDown);
+    };
+
     const onDone = () => {
+      cleanup();
       el.contentEditable = wasEditable;
       this.send({ type: 'TEXT_EDIT_COMPLETE', oid, newText: el.innerText });
     };
 
     const onBlur = () => {
-      el.removeEventListener('blur', onBlur);
       onDone();
     };
     el.addEventListener('blur', onBlur);
 
-    el.addEventListener('keydown', (e) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        el.removeEventListener('blur', onBlur);
         onDone();
       }
-    });
+    };
+    el.addEventListener('keydown', onKeyDown);
   }
 }
 

@@ -1,9 +1,14 @@
-import React, { useState, useRef, WheelEvent, MouseEvent } from 'react';
+import React, { useEffect, useRef, useState, WheelEvent, MouseEvent } from 'react';
+import type { CodeAction } from '@tnfronte/shared';
 import { useEditorStore } from '../store/editor-store';
 import { useBridge } from '../hooks/use-bridge';
 
-export function Canvas() {
-  const { iframeRef, sendToBridge } = useBridge();
+interface CanvasProps {
+  sendAction: (oidId: string, action: CodeAction) => void;
+}
+
+export function Canvas({ sendAction }: CanvasProps) {
+  const { iframeRef, sendToBridge } = useBridge(sendAction);
   const { zoom, panX, panY, setZoom, setPan, iframeSrc, selectedElement } =
     useEditorStore();
 
@@ -35,6 +40,15 @@ export function Canvas() {
   function handleMouseUp() {
     setIsDragging(false);
   }
+
+  useEffect(() => {
+    if (selectedElement?.oid) {
+      sendToBridge({ type: 'SET_SELECTION', oid: selectedElement.oid });
+      return;
+    }
+
+    sendToBridge({ type: 'UNHIGHLIGHT_ALL' });
+  }, [selectedElement?.oid, sendToBridge]);
 
   return (
     <div

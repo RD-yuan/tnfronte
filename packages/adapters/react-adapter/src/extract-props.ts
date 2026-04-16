@@ -1,101 +1,43 @@
-/**
- * extract-props.ts
- *
- * Given an OID, walks the AST to find the matching JSX element and
- * extracts all editable props (className, style properties, text children,
- * custom attributes) with accurate source locations.
- */
-
-import * as recast from 'recast';
+import generate from '@babel/generator';
 import { parse as babelParse } from '@babel/parser';
 import traverse from '@babel/traverse';
 import * as t from '@babel/types';
 
-import type { OID, EditableProp } from '@tnfronte/shared';
-
-const tsxParser = {
-  parse(source: string) {
-    return babelParse(source, {
-      sourceType: 'module',
-      plugins: ['jsx', 'typescript', 'decorators-legacy', 'importMeta'],
-    });
-  },
-};
+import type { EditableProp, OID } from '@tnfronte/shared';
 
 export function extractProps(source: string, oid: OID): EditableProp[] {
-  const ast = recast.parse(source, { parser: tsxParser });
+  const ast = babelParse(source, {
+    sourceType: 'module',
+    plugins: ['jsx', 'typescript', 'decorators-legacy', 'importMeta'],
+  });
   const props: EditableProp[] = [];
 
   traverse(ast, {
     JSXOpeningElement(path) {
-      const hasOID = path.node.attributes.some(
-        (attr) =>
-          t.isJSXAttribute(attr) &&
-          t.isJSXIdentifier(attr.name) &&
-          attr.name.name === 'data-oid' &&
-          t.isStringLiteral(attr.value) &&
-          attr.value.value === oid.id,
-      );
-      if (!hasOID) return;
+      if (!matchesOID(path, oid)) return;
 
       for (const attr of path.node.attributes) {
         if (!t.isJSXAttribute(attr)) continue;
-        if (t.isJSXIdentifier(attr.name) && attr.name.name === 'data-oid') continue;
+        if (!t.isJSXIdentifier(attr.name)) continue;
+        if (attr.name.name === 'data-oid') continue;
 
-        const name = (attr.name as t.JSXIdentifier).name;
-        const loc = attr.loc;
-
-        if (name === 'style' && t.isJSXExpressionContainer(attr.value)) {
-          const expr = attr.value.expression;
-          if (t.isObjectExpression(expr)) {
-            for (const prop of expr.properties) {
-              if (t.isObjectProperty(prop) && t.isIdentifier(prop.key)) {
-                const val =
-                  t.isStringLiteral(prop.value)
-                    ? prop.value.value
-                    : t.isNumericLiteral(prop.value)
-                      ? String(prop.value.value)
-                      : recast.print(prop.value).code;
-                props.push({
-                  name: `style.${prop.key.name}`,
-                  type: inferType(prop.key.name, val),
-                  value: val,
-                  sourceLocation: {
-                    start: prop.loc?.start.column ?? 0,
-                    end: prop.loc?.end.column ?? 0,
-                  },
-                });
-              }
-            }
-          }
-        } else if (name === 'className') {
-          props.push({
-            name: 'className',
-            type: 'string',
-            value: t.isStringLiteral(attr.value) ? attr.value.value : '',
-            sourceLocation: {
-              start: loc?.start.column ?? 0,
-              end: loc?.end.column ?? 0,
-            },
-          });
-        } else {
-          props.push({
-            name,
-            type: 'string',
-            value: t.isStringLiteral(attr.value)
-              ? attr.value.value
-              : t.isJSXExpressionContainer(attr.value)
-                ? recast.print(attr.value).code
-                : '',
-            sourceLocation: {
-              start: loc?.start.column ?? 0,
-              end: loc?.end.column ?? 0,
-            },
-          });
+        if (attr.name.name === 'style') {
+          props.push(...readStyleProps(attr));
+          continue;
         }
+
+        const { type, value } = readAttributeValue(attr);
+        props.push({
+          name: attr.name.name,
+          type: attr.name.name === 'className' ? 'string' : type,
+          value,
+          sourceLocation: {
+            start: attr.loc?.start.column ?? 0,
+            end: attr.loc?.end.column ?? 0,
+          },
+        });
       }
 
-      // Extract text children
       const parent = path.parent;
       if (t.isJSXElement(parent) && parent.children) {
         for (const child of parent.children) {
@@ -103,12 +45,13 @@ export function extractProps(source: string, oid: OID): EditableProp[] {
             props.push({
               name: 'children',
               type: 'string',
-              value: child.value,
+              value: child.value.trim(),
               sourceLocation: {
                 start: child.loc?.start.column ?? 0,
                 end: child.loc?.end.column ?? 0,
               },
             });
+            break;
           }
         }
       }
@@ -118,9 +61,129 @@ export function extractProps(source: string, oid: OID): EditableProp[] {
   return props;
 }
 
-function inferType(propName: string, value: string): EditableProp['type'] {
-  if (propName.match(/color|background|border|Color$/)) return 'color';
-  if (propName.match(/width|height|size|margin|padding|top|left|right|bottom/))
-    return 'string';
+function matchesOID(path: any, oid: OID): boolean {
+  const loc = path.node.loc?.start;
+  if (loc && loc.line === oid.startLine && loc.column === oid.startCol) {
+    return true;
+  }
+
+  const attrs: t.JSXAttribute[] = path.node.attributes;
+  return attrs.some(
+    (attr) =>
+      t.isJSXAttribute(attr) &&
+      t.isJSXIdentifier(attr.name) &&
+      attr.name.name === 'data-oid' &&
+      t.isStringLiteral(attr.value) &&
+      attr.value.value === oid.id,
+  );
+}
+
+function readAttributeValue(attr: t.JSXAttribute): Pick<EditableProp, 'type' | 'value'> {
+  if (attr.value == null) {
+    return { type: 'boolean', value: 'true' };
+  }
+
+  if (t.isStringLiteral(attr.value)) {
+    return {
+      type: inferType(attr.name, attr.value.value),
+      value: attr.value.value,
+    };
+  }
+
+  if (!t.isJSXExpressionContainer(attr.value)) {
+    return { type: 'string', value: '' };
+  }
+
+  const expr = attr.value.expression;
+
+  if (t.isStringLiteral(expr)) {
+    return { type: inferType(attr.name, expr.value), value: expr.value };
+  }
+
+  if (t.isNumericLiteral(expr)) {
+    return { type: 'number', value: String(expr.value) };
+  }
+
+  if (t.isBooleanLiteral(expr)) {
+    return { type: 'boolean', value: String(expr.value) };
+  }
+
+  return {
+    type: 'expression',
+    value: generate(expr).code,
+  };
+}
+
+function readStyleProps(attr: t.JSXAttribute): EditableProp[] {
+  if (!t.isJSXExpressionContainer(attr.value)) {
+    return [];
+  }
+
+  const expr = attr.value.expression;
+  if (!t.isObjectExpression(expr)) {
+    return [
+      {
+        name: 'style',
+        type: 'expression',
+        value: generate(expr).code,
+        sourceLocation: {
+          start: attr.loc?.start.column ?? 0,
+          end: attr.loc?.end.column ?? 0,
+        },
+      },
+    ];
+  }
+
+  const props: EditableProp[] = [];
+  for (const property of expr.properties) {
+    if (!t.isObjectProperty(property)) continue;
+
+    const name = readStylePropName(property.key);
+    if (!name) continue;
+
+    const { type, value } = readStyleValue(name, property.value);
+    props.push({
+      name: `style.${name}`,
+      type,
+      value,
+      sourceLocation: {
+        start: property.loc?.start.column ?? 0,
+        end: property.loc?.end.column ?? 0,
+      },
+    });
+  }
+
+  return props;
+}
+
+function readStylePropName(key: t.Expression | t.Identifier | t.PrivateName): string | null {
+  if (t.isIdentifier(key)) return key.name;
+  if (t.isStringLiteral(key)) return key.value;
+  return null;
+}
+
+function readStyleValue(propName: string, value: t.Expression | t.PatternLike): Pick<EditableProp, 'type' | 'value'> {
+  if (t.isStringLiteral(value)) {
+    return { type: inferType(t.jsxIdentifier(propName), value.value), value: value.value };
+  }
+
+  if (t.isNumericLiteral(value)) {
+    return { type: 'number', value: String(value.value) };
+  }
+
+  if (t.isBooleanLiteral(value)) {
+    return { type: 'boolean', value: String(value.value) };
+  }
+
+  return {
+    type: 'expression',
+    value: generate(value).code,
+  };
+}
+
+function inferType(name: t.JSXIdentifier | t.JSXNamespacedName, value: string): EditableProp['type'] {
+  if (!t.isJSXIdentifier(name)) return 'string';
+  if (name.name.match(/color|background|border|Color$/)) return 'color';
+  if (value === 'true' || value === 'false') return 'boolean';
   return 'string';
 }
