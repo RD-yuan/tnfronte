@@ -32,9 +32,25 @@ function toDOMRectLike(rect: DOMRect): DOMRectLike {
   };
 }
 
-/** Expected editor origin for message validation (set by vite-plugin). */
-const EDITOR_ORIGIN: string =
-  (window as any).__TNFRONTE_EDITOR_ORIGIN__ || '';
+function normalizeOrigin(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0) return '';
+
+  try {
+    return new URL(value, window.location.href).origin;
+  } catch {
+    return '';
+  }
+}
+
+function resolveEditorOrigin(): string {
+  const injectedOrigin = normalizeOrigin((window as any).__TNFRONTE_EDITOR_ORIGIN__);
+  if (injectedOrigin) return injectedOrigin;
+
+  return normalizeOrigin(document.referrer);
+}
+
+/** Expected editor origin for message validation (set by vite-plugin or inferred from referrer). */
+const EDITOR_ORIGIN = resolveEditorOrigin();
 
 export class Bridge {
   private targetOrigin = EDITOR_ORIGIN || '*';

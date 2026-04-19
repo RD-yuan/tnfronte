@@ -17,18 +17,59 @@ export function useWebSocket() {
   const { setLayers } = useEditorStore();
 
   useEffect(() => {
-    let reconnectTimer: ReturnType<typeof setTimeout>;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let disposed = false;
+    let hasConnectedOnce = false;
+    let hasWarnedBackendUnavailable = false;
 
-    function connect() {
+    async function isBackendAvailable() {
+      try {
+        const res = await fetch(API.health, { cache: 'no-store' });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    }
+
+    function scheduleReconnect(delay = 2000) {
+      if (disposed) return;
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => {
+        void connect();
+      }, delay);
+    }
+
+    async function connect() {
+      if (disposed) return;
+
+      const backendAvailable = await isBackendAvailable();
+      if (disposed) return;
+
+      if (!backendAvailable) {
+        setConnected(false);
+
+        if (!hasWarnedBackendUnavailable) {
+          console.warn('[TNFronte] Backend is unavailable, retrying in 2s...');
+          hasWarnedBackendUnavailable = true;
+        }
+
+        scheduleReconnect();
+        return;
+      }
+
+      hasWarnedBackendUnavailable = false;
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
       ws.onopen = () => {
+        if (disposed || wsRef.current !== ws) return;
+        hasConnectedOnce = true;
         setConnected(true);
         console.log('[TNFronte] WebSocket connected');
       };
 
       ws.onmessage = (event) => {
+        if (disposed || wsRef.current !== ws) return;
         try {
           const msg = JSON.parse(event.data) as ServerMessage;
           handleServerMessage(msg);
@@ -38,9 +79,17 @@ export function useWebSocket() {
       };
 
       ws.onclose = () => {
+        if (wsRef.current === ws) {
+          wsRef.current = null;
+        }
+        if (disposed) return;
         setConnected(false);
-        console.log('[TNFronte] WebSocket disconnected, reconnecting in 2s...');
-        reconnectTimer = setTimeout(connect, 2000);
+
+        if (hasConnectedOnce) {
+          console.log('[TNFronte] WebSocket disconnected, reconnecting in 2s...');
+        }
+
+        scheduleReconnect();
       };
 
       ws.onerror = () => {
@@ -48,10 +97,15 @@ export function useWebSocket() {
       };
     }
 
-    connect();
+    void connect();
     return () => {
+      disposed = true;
       clearTimeout(reconnectTimer);
-      wsRef.current?.close();
+      const ws = wsRef.current;
+      wsRef.current = null;
+      if (ws && ws.readyState !== WebSocket.CLOSED) {
+        ws.close();
+      }
     };
   }, [setLayers]);
 

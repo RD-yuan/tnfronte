@@ -43,6 +43,14 @@ export class UndoManager {
     entry.newContent = newContent;
   }
 
+  /** Remove a pending undo entry when the associated edit failed. */
+  discard(entry: UndoEntry) {
+    const index = this.undoStack.lastIndexOf(entry);
+    if (index >= 0) {
+      this.undoStack.splice(index, 1);
+    }
+  }
+
   /**
    * Undo the last edit — write old content back to file.
    * If the file was externally modified, returns success=false with a warning.

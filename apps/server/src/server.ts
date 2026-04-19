@@ -1,6 +1,6 @@
 import Fastify, { FastifyInstance } from 'fastify';
-import { WebSocketServer, WebSocket } from 'ws';
-import * as http from 'http';
+import chokidar, { type FSWatcher } from 'chokidar';
+import { WebSocketServer } from 'ws';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -16,6 +16,9 @@ export interface ServerOptions {
   port?: number;
 }
 
+const SOURCE_EXTENSIONS = new Set(['.tsx', '.jsx']);
+const IGNORED_SEGMENTS = new Set(['node_modules', '.git', 'dist', '.turbo']);
+
 export async function createServer(options: ServerOptions = {}): Promise<FastifyInstance> {
   const port = options.port ?? 4000;
   const fastify = Fastify({ logger: false });
@@ -23,56 +26,169 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   // ─── Initialise core services ───────────────────────────────────────
   const oidIndex = new OIDIndex();
   const codeModEngine = new CodeModEngine(oidIndex);
-  codeModEngine.registerAdapter(new ReactAdapter());
+  const reactAdapter = new ReactAdapter();
+  codeModEngine.registerAdapter(reactAdapter);
 
   const wsHub = new WebSocketHub();
   const projectManager = new ProjectManager();
   const undoManager = new UndoManager();
+  let projectWatcher: FSWatcher | null = null;
+  let syncQueue = Promise.resolve();
+
+  const currentLayers = () => getLayers(oidIndex);
+
+  const enqueueSync = async <T>(task: () => Promise<T>): Promise<T> => {
+    const next = syncQueue.then(task, task);
+    syncQueue = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  };
+
+  const broadcastLayers = () => {
+    wsHub.broadcast({ kind: 'layers', layers: currentLayers() });
+  };
+
+  const broadcastFileChanged = (filePath: string) => {
+    wsHub.broadcast({ kind: 'file-changed', filePath });
+  };
+
+  const syncIndexedFile = async (filePath: string) =>
+    enqueueSync(() => refreshIndexedFile(filePath, oidIndex, reactAdapter));
+
+  const rescanProject = async (projectDir: string) =>
+    enqueueSync(async () => {
+      oidIndex.clear();
+      await scanProject(projectDir, oidIndex, reactAdapter);
+    });
+
+  const syncProjectStateForFile = async (filePath: string) => {
+    const absolutePath = path.resolve(filePath);
+
+    if (isSupportedSourceFile(absolutePath)) {
+      await syncIndexedFile(absolutePath);
+    }
+
+    broadcastFileChanged(absolutePath);
+    broadcastLayers();
+  };
+
+  const stopWatchingProject = async () => {
+    if (!projectWatcher) return;
+
+    const watcher = projectWatcher;
+    projectWatcher = null;
+    await watcher.close();
+  };
+
+  const startWatchingProject = async (projectDir: string) => {
+    await stopWatchingProject();
+
+    const watcher = chokidar.watch(projectDir, {
+      ignoreInitial: true,
+      awaitWriteFinish: {
+        stabilityThreshold: 150,
+        pollInterval: 50,
+      },
+      ignored: (candidate) => shouldIgnorePath(candidate),
+    });
+    projectWatcher = watcher;
+
+    const handleSourceUpdate = async (candidate: string) => {
+      const absolutePath = path.resolve(candidate);
+      if (!isSupportedSourceFile(absolutePath)) return;
+
+      await syncProjectStateForFile(absolutePath);
+    };
+
+    watcher.on('add', (candidate) => {
+      void handleSourceUpdate(candidate);
+    });
+    watcher.on('change', (candidate) => {
+      void handleSourceUpdate(candidate);
+    });
+    watcher.on('unlink', (candidate) => {
+      const absolutePath = path.resolve(candidate);
+      if (!isSupportedSourceFile(absolutePath)) return;
+
+      oidIndex.removeFile(absolutePath);
+      broadcastFileChanged(absolutePath);
+      broadcastLayers();
+    });
+    watcher.on('error', (err) => {
+      console.error('[TNFronte] Project watcher error:', err);
+    });
+  };
 
   // ─── HTTP Routes ────────────────────────────────────────────────────
 
-  // Health check
-  fastify.get('/api/health', async () => ({ status: 'ok', timestamp: Date.now() }));
+  const wss = new WebSocketServer({ server: fastify.server, path: '/ws' });
 
-  // Open a project directory
+  fastify.addHook('onClose', async () => {
+    await stopWatchingProject();
+    await new Promise<void>((resolve) => wss.close(() => resolve()));
+  });
+
+  fastify.get('/api/health', async () => ({
+    status: 'ok',
+    timestamp: Date.now(),
+    projectDir: projectManager.getProjectDir(),
+    oidCount: oidIndex.size,
+    watching: Boolean(projectWatcher),
+    canUndo: undoManager.canUndo,
+    canRedo: undoManager.canRedo,
+  }));
+
   fastify.post<{ Body: { dir: string } }>('/api/project/open', async (req, reply) => {
     const { dir } = req.body;
+    if (!dir) {
+      return reply.status(400).send({ error: 'Project directory is required' });
+    }
+
+    const projectDir = path.resolve(dir);
+
     try {
-      const stat = await fs.stat(dir);
+      const stat = await fs.stat(projectDir);
       if (!stat.isDirectory()) {
         return reply.status(400).send({ error: 'Not a directory' });
       }
-      projectManager.setProjectDir(dir);
-      await scanProject(dir, oidIndex);
-      wsHub.broadcast({
-        kind: 'layers',
-        layers: oidIndex.getAll().map(toLayerInfo),
-      });
-      return { success: true, dir, oidCount: oidIndex.size };
+
+      projectManager.setProjectDir(projectDir);
+      undoManager.clear();
+      await rescanProject(projectDir);
+      await startWatchingProject(projectDir);
+      broadcastLayers();
+
+      return {
+        success: true,
+        dir: projectDir,
+        oidCount: oidIndex.size,
+        fileCount: oidIndex.getFiles().length,
+        watching: true,
+      };
     } catch (err: any) {
       return reply.status(404).send({ error: err.message });
     }
   });
 
-  // Get current project info
-  fastify.get('/api/project', async () => {
-    const dir = projectManager.getProjectDir();
-    return {
-      dir,
-      oidCount: oidIndex.size,
-      files: oidIndex.getFiles(),
-    };
-  });
+  fastify.get('/api/project', async () => ({
+    dir: projectManager.getProjectDir(),
+    oidCount: oidIndex.size,
+    files: oidIndex.getFiles(),
+    watching: Boolean(projectWatcher),
+    canUndo: undoManager.canUndo,
+    canRedo: undoManager.canRedo,
+  }));
 
-  // Get layers
-  fastify.get('/api/layers', async () => {
-    return oidIndex.getAll().map(toLayerInfo);
-  });
+  fastify.get('/api/layers', async () => currentLayers());
 
-  // Get OID mapping
-  fastify.get<{ Params: { id: string } }>('/api/oid/:id', async (req) => {
+  fastify.get<{ Params: { id: string } }>('/api/oid/:id', async (req, reply) => {
     const oid = oidIndex.getById(req.params.id);
-    if (!oid) return { error: 'OID not found' };
+    if (!oid) {
+      return reply.status(404).send({ error: 'OID not found' });
+    }
+
     return oid;
   });
 
@@ -91,18 +207,22 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
 
   // Read file
   fastify.get<{ Querystring: { path: string } }>('/api/file', async (req, reply) => {
-    const filePath = req.query.path;
-    const projectDir = projectManager.getProjectDir();
-    if (!projectDir) return reply.status(400).send({ error: 'No project open' });
+    const requestedPath = req.query.path;
+    if (!projectManager.getProjectDir()) {
+      return reply.status(400).send({ error: 'No project open' });
+    }
+    if (!requestedPath) {
+      return reply.status(400).send({ error: 'File path is required' });
+    }
 
-    const absPath = path.resolve(projectDir, filePath);
-    if (!absPath.startsWith(projectDir)) {
+    const absolutePath = projectManager.resolvePath(requestedPath);
+    if (!absolutePath) {
       return reply.status(403).send({ error: 'Path outside project' });
     }
 
     try {
-      const content = await fs.readFile(absPath, 'utf-8');
-      return { path: filePath, content };
+      const content = await fs.readFile(absolutePath, 'utf-8');
+      return { path: projectManager.toProjectPath(absolutePath), content };
     } catch {
       return reply.status(404).send({ error: 'File not found' });
     }
@@ -111,22 +231,29 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   // Undo
   fastify.post('/api/undo', async () => {
     const result = await undoManager.undo();
+    if (result.success && result.filePath) {
+      await syncProjectStateForFile(result.filePath);
+    }
+
     return result;
   });
 
   // Redo
   fastify.post('/api/redo', async () => {
     const result = await undoManager.redo();
+    if (result.success && result.filePath) {
+      await syncProjectStateForFile(result.filePath);
+    }
+
     return result;
   });
 
   // ─── WebSocket Server ───────────────────────────────────────────────
-  const wss = new WebSocketServer({ server: fastify.server, path: '/ws' });
-
   wss.on('connection', (ws) => {
     console.log('[TNFronte] Editor client connected');
     wsHub.add(ws);
     wsHub.send(ws, { kind: 'connected', message: 'TNFronte backend connected' });
+    wsHub.send(ws, { kind: 'layers', layers: currentLayers() });
 
     ws.on('message', async (raw) => {
       try {
@@ -136,13 +263,68 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
           case 'action': {
             // Save state for undo before applying
             const oid = oidIndex.getById(msg.oidId);
-            if (oid) {
-              const projectDir = projectManager.getProjectDir();
-              if (projectDir) {
-                const absPath = path.resolve(projectDir, oid.filePath);
-                const oldContent = await fs.readFile(absPath, 'utf-8');
-                const undoEntry = undoManager.push({
-                  filePath: absPath,
+            if (!oid) {
+              wsHub.send(ws, { kind: 'error', message: `OID not found: ${msg.oidId}` });
+              break;
+            }
+
+            const filePath = projectManager.resolvePath(oid.filePath) ?? oid.filePath;
+            let undoEntry: ReturnType<UndoManager['push']> | undefined;
+
+            try {
+              if (projectManager.getProjectDir()) {
+                const oldContent = await fs.readFile(filePath, 'utf-8');
+                undoEntry = undoManager.push({
+                  filePath,
+                  oldContent,
+                  description: `${msg.action.type} on ${oid.tagName}`,
+                });
+              }
+
+              const result = await codeModEngine.applyAndWrite(msg.oidId, msg.action);
+              if (!result.success) {
+                if (undoEntry) {
+                  undoManager.discard(undoEntry);
+                }
+
+                wsHub.send(ws, {
+                  kind: 'action-result',
+                  success: false,
+                  filePath: result.filePath,
+                });
+                break;
+              }
+
+              if (undoEntry) {
+                try {
+                  const newContent = await fs.readFile(result.filePath, 'utf-8');
+                  undoManager.pushNewContent(undoEntry, newContent);
+                } catch {
+                  undoManager.discard(undoEntry);
+                }
+              }
+
+              await syncProjectStateForFile(result.filePath);
+
+              wsHub.send(ws, {
+                kind: 'action-result',
+                success: true,
+                filePath: result.filePath,
+              });
+              break;
+            } catch (err) {
+              if (undoEntry) {
+                undoManager.discard(undoEntry);
+              }
+              throw err;
+            }
+
+            /*
+            try {
+              if (projectManager.getProjectDir()) {
+                const oldContent = await fs.readFile(filePath, 'utf-8');
+                undoEntry = undoManager.push({
+                  filePath,
                   oldContent,
                   description: `${msg.action.type} on ${oid.tagName}`,
                 });
@@ -177,10 +359,11 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
               filePath: result.filePath,
             });
             break;
+            */
           }
 
           default:
-            wsHub.send(ws, { kind: 'error', message: `Unknown message kind` });
+            wsHub.send(ws, { kind: 'error', message: 'Unknown message kind' });
         }
       } catch (err: any) {
         wsHub.send(ws, { kind: 'error', message: err.message });
@@ -198,20 +381,10 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
-async function scanProject(dir: string, index: OIDIndex) {
-  const adapter = new ReactAdapter();
+async function scanProject(dir: string, index: OIDIndex, adapter: ReactAdapter) {
   await walk(dir, dir, async (absPath, relPath) => {
-    if (relPath.includes('node_modules')) return;
-    if (relPath.includes('.tnfronte-tmp')) return;
-    if (!(absPath.endsWith('.tsx') || absPath.endsWith('.jsx'))) return;
-
-    try {
-      const source = await fs.readFile(absPath, 'utf-8');
-      const result = await adapter.injectOID(source, absPath);
-      index.updateMappings(absPath, result.mappings);
-    } catch {
-      // Skip files that fail to parse
-    }
+    if (shouldIgnorePath(relPath) || !isSupportedSourceFile(absPath)) return;
+    await refreshIndexedFile(absPath, index, adapter);
   });
 }
 
@@ -225,7 +398,7 @@ async function walk(
     const absPath = path.join(current, entry.name);
     const relPath = path.relative(root, absPath);
     if (entry.isDirectory()) {
-      if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'dist') continue;
+      if (shouldIgnorePath(relPath)) continue;
       await walk(root, absPath, fn);
     } else {
       await fn(absPath, relPath);
@@ -233,7 +406,68 @@ async function walk(
   }
 }
 
-function toLayerInfo(m: any): LayerInfo {
+async function refreshIndexedFile(
+  filePath: string,
+  index: OIDIndex,
+  adapter: ReactAdapter,
+): Promise<boolean> {
+  if (shouldIgnorePath(filePath) || !isSupportedSourceFile(filePath)) {
+    return false;
+  }
+
+  try {
+    const source = await fs.readFile(filePath, 'utf-8');
+    const result = await adapter.injectOID(source, filePath);
+    index.updateMappings(filePath, result.mappings);
+    return true;
+  } catch {
+    index.removeFile(filePath);
+    return false;
+  }
+}
+
+function isSupportedSourceFile(filePath: string): boolean {
+  return SOURCE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+function shouldIgnorePath(candidatePath: string): boolean {
+  if (!candidatePath) return false;
+
+  const normalized = path.normalize(candidatePath);
+  if (
+    normalized.includes('.tnfronte-tmp') ||
+    normalized.includes('.tnfronte-undo-tmp') ||
+    normalized.includes('.tnfronte-redo-tmp')
+  ) {
+    return true;
+  }
+
+  return normalized
+    .split(path.sep)
+    .filter(Boolean)
+    .some((segment) => IGNORED_SEGMENTS.has(segment));
+}
+
+function getLayers(index: OIDIndex): LayerInfo[] {
+  return index
+    .getAll()
+    .sort((a, b) => {
+      if (a.filePath === b.filePath) {
+        return a.startLine - b.startLine || a.startCol - b.startCol;
+      }
+
+      return a.filePath.localeCompare(b.filePath);
+    })
+    .map(toLayerInfo);
+}
+
+function toLayerInfo(m: {
+  id: string;
+  tagName: string;
+  componentScope: string;
+  filePath: string;
+  startLine: number;
+}): LayerInfo {
   return {
     oid: m.id,
     tagName: m.tagName,

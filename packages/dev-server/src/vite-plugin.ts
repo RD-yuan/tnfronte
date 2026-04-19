@@ -57,12 +57,16 @@ export function tnfronteVitePlugin(options: TnfrontePluginOptions = {}): Plugin 
 
     transformIndexHtml: {
       enforce: 'post',
-      transform(_html: string, ctx: { server?: ViteDevServer }) {
-        const editorOrigin = ctx.server?.resolvedUrls?.local[0] || '';
+      transform(_html: string, _ctx: { server?: ViteDevServer }) {
         return [
           {
             tag: 'script',
-            children: `window.__TNFRONTE_EDITING__ = true; window.__TNFRONTE_EDITOR_ORIGIN__ = ${JSON.stringify(editorOrigin)};`,
+            children: `
+              window.__TNFRONTE_EDITING__ = true;
+              window.__TNFRONTE_EDITOR_ORIGIN__ = document.referrer
+                ? new URL(document.referrer).origin
+                : '';
+            `,
             injectTo: 'head' as const,
           },
           {
