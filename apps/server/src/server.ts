@@ -23,7 +23,6 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   const port = options.port ?? 4000;
   const fastify = Fastify({ logger: false });
 
-  // ─── Initialise core services ───────────────────────────────────────
   const oidIndex = new OIDIndex();
   const codeModEngine = new CodeModEngine(oidIndex);
   const reactAdapter = new ReactAdapter();
@@ -121,8 +120,6 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     });
   };
 
-  // ─── HTTP Routes ────────────────────────────────────────────────────
-
   const wss = new WebSocketServer({ server: fastify.server, path: '/ws' });
 
   fastify.addHook('onClose', async () => {
@@ -192,7 +189,6 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     return oid;
   });
 
-  // Extract editable props for a specific OID
   fastify.get<{ Params: { id: string } }>('/api/oid/:id/props', async (req, reply) => {
     const result = await codeModEngine.extractEditableProps(req.params.id);
     if (!result.success) {
@@ -205,7 +201,6 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     };
   });
 
-  // Read file
   fastify.get<{ Querystring: { path: string } }>('/api/file', async (req, reply) => {
     const requestedPath = req.query.path;
     if (!projectManager.getProjectDir()) {
@@ -228,7 +223,6 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     }
   });
 
-  // Undo
   fastify.post('/api/undo', async () => {
     const result = await undoManager.undo();
     if (result.success && result.filePath) {
@@ -238,7 +232,6 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     return result;
   });
 
-  // Redo
   fastify.post('/api/redo', async () => {
     const result = await undoManager.redo();
     if (result.success && result.filePath) {
@@ -248,7 +241,6 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     return result;
   });
 
-  // ─── WebSocket Server ───────────────────────────────────────────────
   wss.on('connection', (ws) => {
     console.log('[TNFronte] Editor client connected');
     wsHub.add(ws);
@@ -261,7 +253,6 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
 
         switch (msg.kind) {
           case 'action': {
-            // Save state for undo before applying
             const oid = oidIndex.getById(msg.oidId);
             if (!oid) {
               wsHub.send(ws, { kind: 'error', message: `OID not found: ${msg.oidId}` });
@@ -270,6 +261,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
 
             const filePath = projectManager.resolvePath(oid.filePath) ?? oid.filePath;
             let undoEntry: ReturnType<UndoManager['push']> | undefined;
+            let writeSucceeded = false;
 
             try {
               if (projectManager.getProjectDir()) {
@@ -294,13 +286,17 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
                 });
                 break;
               }
+              writeSucceeded = true;
 
               if (undoEntry) {
                 try {
                   const newContent = await fs.readFile(result.filePath, 'utf-8');
                   undoManager.pushNewContent(undoEntry, newContent);
-                } catch {
-                  undoManager.discard(undoEntry);
+                } catch (err) {
+                  console.warn(
+                    `[TNFronte] Action applied but failed to record undo snapshot for ${result.filePath}:`,
+                    err,
+                  );
                 }
               }
 
@@ -313,53 +309,11 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
               });
               break;
             } catch (err) {
-              if (undoEntry) {
+              if (undoEntry && !writeSucceeded) {
                 undoManager.discard(undoEntry);
               }
               throw err;
             }
-
-            /*
-            try {
-              if (projectManager.getProjectDir()) {
-                const oldContent = await fs.readFile(filePath, 'utf-8');
-                undoEntry = undoManager.push({
-                  filePath,
-                  oldContent,
-                  description: `${msg.action.type} on ${oid.tagName}`,
-                });
-
-                // Apply the action
-                const result = await codeModEngine.applyAndWrite(msg.oidId, msg.action);
-
-                // Record content after edit for consistency check
-                if (result.success) {
-                  try {
-                    const newContent = await fs.readFile(result.filePath, 'utf-8');
-                    undoManager.pushNewContent(undoEntry, newContent);
-                  } catch {
-                    // File read failed — skip consistency tracking for this entry
-                  }
-                }
-
-                wsHub.send(ws, {
-                  kind: 'action-result',
-                  success: result.success,
-                  filePath: result.filePath,
-                });
-                break;
-              }
-            }
-
-            // No project dir or OID not found — apply without undo
-            const result = await codeModEngine.applyAndWrite(msg.oidId, msg.action);
-            wsHub.send(ws, {
-              kind: 'action-result',
-              success: result.success,
-              filePath: result.filePath,
-            });
-            break;
-            */
           }
 
           default:
@@ -371,15 +325,12 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     });
   });
 
-  // ─── Start ──────────────────────────────────────────────────────────
   await fastify.listen({ port, host: '0.0.0.0' });
   console.log(`[TNFronte] Backend running on http://localhost:${port}`);
   console.log(`[TNFronte] WebSocket on ws://localhost:${port}/ws`);
 
   return fastify;
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────
 
 async function scanProject(dir: string, index: OIDIndex, adapter: ReactAdapter) {
   await walk(dir, dir, async (absPath, relPath) => {
