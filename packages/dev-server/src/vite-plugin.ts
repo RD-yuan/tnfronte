@@ -1,4 +1,5 @@
 import type { Plugin, ViteDevServer } from 'vite';
+import { HtmlAdapter } from '@tnfronte/html-adapter';
 import { OIDIndex } from '@tnfronte/oid-index';
 import { ReactAdapter } from '@tnfronte/react-adapter';
 import type { FrameworkAdapter, InjectionResult, LayerInfo } from '@tnfronte/shared';
@@ -10,7 +11,8 @@ export interface TnfrontePluginOptions {
 
 export function tnfronteVitePlugin(options: TnfrontePluginOptions = {}): Plugin {
   const oidIndex = new OIDIndex();
-  const adapters: FrameworkAdapter[] = [new ReactAdapter(), ...(options.adapters ?? [])];
+  const htmlAdapter = new HtmlAdapter();
+  const adapters: FrameworkAdapter[] = [new ReactAdapter(), htmlAdapter, ...(options.adapters ?? [])];
   let bridgeSource = '';
 
   return {
@@ -31,24 +33,26 @@ export function tnfronteVitePlugin(options: TnfrontePluginOptions = {}): Plugin 
     },
 
     async transform(code, id) {
-      if (id.includes('node_modules')) return null;
-      if (id.includes('.tnfronte-tmp')) return null;
+      const fileId = stripQuery(id);
+      if (fileId.includes('node_modules')) return null;
+      if (fileId.includes('.tnfronte-tmp')) return null;
 
       const adapter = adapters.find((candidate) =>
-        candidate.extensions.some((ext) => id.endsWith(ext)),
+        candidate.extensions.some((ext) => fileId.endsWith(ext)),
       );
       if (!adapter) return null;
 
       let result: InjectionResult | null = null;
 
       try {
-        result = await adapter.injectOID(code, id);
+        result = await adapter.injectOID(code, fileId);
       } catch {
+        oidIndex.removeFile(fileId);
         return null;
       }
 
-      if (result && result.mappings.length > 0) {
-        oidIndex.updateMappings(id, result.mappings);
+      oidIndex.updateMappings(fileId, result.mappings);
+      if (result.code !== code) {
         return { code: result.code, map: null };
       }
 
@@ -57,8 +61,20 @@ export function tnfronteVitePlugin(options: TnfrontePluginOptions = {}): Plugin 
 
     transformIndexHtml: {
       enforce: 'post',
-      transform(_html: string, _ctx: { server?: ViteDevServer }) {
-        return [
+      async transform(html: string, ctx: { path: string; filename: string; server?: ViteDevServer }) {
+        let injectedHtml = html;
+
+        try {
+          const result = await htmlAdapter.injectOID(html, ctx.filename);
+          oidIndex.updateMappings(ctx.filename, result.mappings);
+          injectedHtml = result.code;
+        } catch {
+          oidIndex.removeFile(ctx.filename);
+        }
+
+        return {
+          html: injectedHtml,
+          tags: [
           {
             tag: 'script',
             children: `
@@ -90,7 +106,8 @@ export function tnfronteVitePlugin(options: TnfrontePluginOptions = {}): Plugin 
             `,
             injectTo: 'head' as const,
           },
-        ];
+          ],
+        };
       },
     },
 
@@ -122,4 +139,8 @@ export function tnfronteVitePlugin(options: TnfrontePluginOptions = {}): Plugin 
       });
     },
   };
+}
+
+function stripQuery(id: string): string {
+  return id.split('?')[0].split('#')[0];
 }

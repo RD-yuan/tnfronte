@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@tnfronte/bridge": "workspace:*",
+    "@tnfronte/html-adapter": "workspace:*",
     "@tnfronte/oid-index": "workspace:*",
     "@tnfronte/react-adapter": "workspace:*",
     "@tnfronte/shared": "workspace:*",

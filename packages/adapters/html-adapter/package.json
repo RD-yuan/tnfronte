@@ -10,10 +10,10 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@tnfronte/shared": "workspace:*"
+    "@tnfronte/shared": "workspace:*",
+    "parse5": "^7.3.0"
   },
   "devDependencies": {
-    "parse5": "^7.2.0",
     "typescript": "^5.6.0"
   }
 }

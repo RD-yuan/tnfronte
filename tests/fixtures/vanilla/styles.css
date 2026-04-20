@@ -1,0 +1,23 @@
+body {
+  font-family: sans-serif;
+  margin: 0;
+  background: #f8fafc;
+  color: #111827;
+}
+
+.app-shell {
+  max-width: 640px;
+  margin: 40px auto;
+  padding: 24px;
+  border-radius: 16px;
+  background: white;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.12);
+}
+
+.btn.primary {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 16px;
+  color: white;
+  background: #2563eb;
+}

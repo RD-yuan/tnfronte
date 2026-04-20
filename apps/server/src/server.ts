@@ -6,8 +6,9 @@ import * as path from 'path';
 
 import { OIDIndex } from '@tnfronte/oid-index';
 import { CodeModEngine } from '@tnfronte/code-mod';
+import { HtmlAdapter } from '@tnfronte/html-adapter';
 import { ReactAdapter } from '@tnfronte/react-adapter';
-import type { ClientMessage, LayerInfo } from '@tnfronte/shared';
+import type { ClientMessage, FrameworkAdapter, LayerInfo } from '@tnfronte/shared';
 import { WebSocketHub } from './ws-hub';
 import { ProjectManager } from './project-manager';
 import { UndoManager } from './undo-manager';
@@ -16,7 +17,7 @@ export interface ServerOptions {
   port?: number;
 }
 
-const SOURCE_EXTENSIONS = new Set(['.tsx', '.jsx']);
+const SOURCE_EXTENSIONS = new Set(['.tsx', '.jsx', '.html', '.htm']);
 const IGNORED_SEGMENTS = new Set(['node_modules', '.git', 'dist', '.turbo']);
 
 export async function createServer(options: ServerOptions = {}): Promise<FastifyInstance> {
@@ -25,8 +26,10 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
 
   const oidIndex = new OIDIndex();
   const codeModEngine = new CodeModEngine(oidIndex);
-  const reactAdapter = new ReactAdapter();
-  codeModEngine.registerAdapter(reactAdapter);
+  const adapters: FrameworkAdapter[] = [new ReactAdapter(), new HtmlAdapter()];
+  for (const adapter of adapters) {
+    codeModEngine.registerAdapter(adapter);
+  }
 
   const wsHub = new WebSocketHub();
   const projectManager = new ProjectManager();
@@ -54,12 +57,12 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   };
 
   const syncIndexedFile = async (filePath: string) =>
-    enqueueSync(() => refreshIndexedFile(filePath, oidIndex, reactAdapter));
+    enqueueSync(() => refreshIndexedFile(filePath, oidIndex, adapters));
 
   const rescanProject = async (projectDir: string) =>
     enqueueSync(async () => {
       oidIndex.clear();
-      await scanProject(projectDir, oidIndex, reactAdapter);
+      await scanProject(projectDir, oidIndex, adapters);
     });
 
   const syncProjectStateForFile = async (filePath: string) => {
@@ -332,10 +335,10 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   return fastify;
 }
 
-async function scanProject(dir: string, index: OIDIndex, adapter: ReactAdapter) {
+async function scanProject(dir: string, index: OIDIndex, adapters: FrameworkAdapter[]) {
   await walk(dir, dir, async (absPath, relPath) => {
     if (shouldIgnorePath(relPath) || !isSupportedSourceFile(absPath)) return;
-    await refreshIndexedFile(absPath, index, adapter);
+    await refreshIndexedFile(absPath, index, adapters);
   });
 }
 
@@ -360,13 +363,19 @@ async function walk(
 async function refreshIndexedFile(
   filePath: string,
   index: OIDIndex,
-  adapter: ReactAdapter,
+  adapters: FrameworkAdapter[],
 ): Promise<boolean> {
   if (shouldIgnorePath(filePath) || !isSupportedSourceFile(filePath)) {
     return false;
   }
 
   try {
+    const adapter = findAdapterForFile(filePath, adapters);
+    if (!adapter) {
+      index.removeFile(filePath);
+      return false;
+    }
+
     const source = await fs.readFile(filePath, 'utf-8');
     const result = await adapter.injectOID(source, filePath);
     index.updateMappings(filePath, result.mappings);
@@ -379,6 +388,14 @@ async function refreshIndexedFile(
 
 function isSupportedSourceFile(filePath: string): boolean {
   return SOURCE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+function findAdapterForFile(
+  filePath: string,
+  adapters: FrameworkAdapter[],
+): FrameworkAdapter | undefined {
+  const extension = path.extname(filePath).toLowerCase();
+  return adapters.find((adapter) => adapter.extensions.includes(extension));
 }
 
 function shouldIgnorePath(candidatePath: string): boolean {
